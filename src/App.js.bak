@@ -1,0 +1,674 @@
+import React, { useEffect, useState } from 'react';
+import { useWeb3React } from '@web3-react/core';
+import { injected, walletconnect } from './connectors';
+import { ethers } from 'ethers';
+import { USDT_ADDRESS, CULTURE_ADDRESS, MINING_CONTRACT_ADDRESS, OWNER_ADDRESS } from './contracts/addresses';
+import MiningABI from './contracts/abi.json';
+import ERC20ABI from './contracts/erc20.json';
+import { getPoolManager, resetPoolManager } from './services/poolManager';
+import { initializeTeamData, updateTeamData, loadCache, saveCache } from './services/teamStats';
+import TeamView from './components/TeamView';
+
+if (typeof window.ethereum === 'undefined') {
+  console.warn('请安装MetaMask');
+}
+// 防抖函数 - 防止频繁调用
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+function App() {
+  const { active, account, library, activate, deactivate } = useWeb3React();
+  const [userInfo, setUserInfo] = useState(null);
+  const [pendingReward, setPendingReward] = useState('0');
+  const [currentPrice, setCurrentPrice] = useState('0');
+  const [marketPrice, setMarketPrice] = useState('0');
+  const [totalMinted, setTotalMinted] = useState('0');
+  const [depositAmount, setDepositAmount] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [bindAddress, setBindAddress] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+  const [myInviteCode, setMyInviteCode] = useState('');
+  
+  const [depositLoading, setDepositLoading] = useState(false);
+  const [withdrawLoading, setWithdrawLoading] = useState(false);
+  const [claimLoading, setClaimLoading] = useState(false);
+  const [bindLoading, setBindLoading] = useState(false);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [poolLoading, setPoolLoading] = useState(false);
+  
+  const [usdtBalance, setUsdtBalance] = useState('0');
+  const [cultureBalance, setCultureBalance] = useState('0');
+  const [isNode, setIsNode] = useState(false);
+  const [nodeInfo, setNodeInfo] = useState(null);
+  
+  const [pools, setPools] = useState([]);
+  const [poolManager, setPoolManager] = useState(null);
+  const [newPoolAddress, setNewPoolAddress] = useState('');
+  const [showTeamView, setShowTeamView] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  
+  const isOwner = account && account.toLowerCase() === OWNER_ADDRESS.toLowerCase();
+
+  const connectWallet = async (connector) => {
+    try {
+      if (window.ethereum) {
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        console.log('连接成功', accounts);
+        await activate(connector);
+      } else {
+        alert('请安装MetaMask');
+      }
+    } catch (error) {
+      console.error('连接失败', error);
+      alert('连接失败：' + (error.message || '用户拒绝'));
+    }
+  };
+
+  const disconnectWallet = () => {
+    try {
+      deactivate();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const getMiningContract = () => {
+    if (!library) return null;
+    const signer = library.getSigner();
+    return new ethers.Contract(MINING_CONTRACT_ADDRESS, MiningABI, signer);
+  };
+
+  const getUSDTContract = () => {
+    if (!library) return null;
+    const signer = library.getSigner();
+    return new ethers.Contract(USDT_ADDRESS, ERC20ABI, signer);
+  };
+
+  const getCultureContract = () => {
+    if (!library) return null;
+    const signer = library.getSigner();
+    try {
+      return new ethers.Contract(CULTURE_ADDRESS, ERC20ABI, signer);
+    } catch (error) {
+      console.error('创建CULTURE合约失败', error);
+      return null;
+    }
+  };
+
+  const miningContract = getMiningContract();
+
+  const loadUserData = async () => {
+  if (!account || !miningContract) return;
+  try {
+    const info = await miningContract.users(account);
+    setUserInfo({
+      depositBase: ethers.utils.formatEther(info.depositBase),
+      remainingDeposit: ethers.utils.formatEther(info.remainingDeposit),
+      pendingReward: ethers.utils.formatEther(info.pendingReward),
+      cumulativeDeposited: ethers.utils.formatEther(info.cumulativeDeposited),
+      cumulativeWithdrawn: ethers.utils.formatEther(info.cumulativeWithdrawn),
+      totalRewarded: ethers.utils.formatEther(info.totalRewarded)
+    });
+
+    const reward = await miningContract.pendingReward(account);
+    setPendingReward(ethers.utils.formatEther(reward));
+
+    try {
+      const code = await miningContract.getMyInviteCode();
+      if (code && code.toString() !== '0') {
+        setMyInviteCode(code.toString());
+      }
+    } catch (e) {}
+
+    try {
+      const nodeData = await miningContract.nodes(account);
+      setIsNode(nodeData.isNode);
+      if (nodeData.isNode) {
+        const nodeEarnings = await miningContract.getNodeRealEarnings(account);
+        setNodeInfo({
+          claimed: ethers.utils.formatEther(nodeEarnings.claimed),
+          pending: ethers.utils.formatEther(nodeEarnings.pending),
+          total: ethers.utils.formatEther(nodeEarnings.total),
+          lastSnapshot: ethers.utils.formatEther(nodeEarnings.lastSnapshot)
+        });
+      }
+    } catch (e) {}
+    
+    // 强制显示邀请码弹窗
+    setShowInviteModal(true);
+    
+  } catch (error) {
+    console.error(error);
+  }
+};
+
+      try {
+        const nodeData = await miningContract.nodes(account);
+        setIsNode(nodeData.isNode);
+        if (nodeData.isNode) {
+          const nodeEarnings = await miningContract.getNodeRealEarnings(account);
+          setNodeInfo({
+            claimed: ethers.utils.formatEther(nodeEarnings.claimed),
+            pending: ethers.utils.formatEther(nodeEarnings.pending),
+            total: ethers.utils.formatEther(nodeEarnings.total),
+            lastSnapshot: ethers.utils.formatEther(nodeEarnings.lastSnapshot)
+          });
+        }
+      } catch (e) {}
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const loadGlobalData = async () => {
+    if (!miningContract) return;
+    try {
+      const price = await miningContract.currentPrice();
+      setCurrentPrice(ethers.utils.formatEther(price));
+
+      try {
+        const mPrice = await miningContract.getMarketPrice();
+        setMarketPrice(ethers.utils.formatEther(mPrice));
+      } catch (e) {}
+
+      const minted = await miningContract.totalMinted();
+      setTotalMinted(ethers.utils.formatEther(minted));
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const loadBalances = async () => {
+    if (!account || !library) return;
+    
+    const usdt = getUSDTContract();
+    if (usdt) {
+      try {
+        const bal = await usdt.balanceOf(account);
+        setUsdtBalance(ethers.utils.formatEther(bal));
+      } catch (error) {
+        console.error('获取USDT余额失败', error);
+        setUsdtBalance('0');
+      }
+    }
+    
+    const culture = getCultureContract();
+    if (culture) {
+      try {
+        const bal = await culture.balanceOf(account);
+        setCultureBalance(ethers.utils.formatEther(bal));
+      } catch (error) {
+        console.error('获取CULTURE余额失败', error);
+        setCultureBalance('0');
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (miningContract) {
+      const manager = getPoolManager(miningContract);
+      setPoolManager(manager);
+      manager.initialize(0).then(setPools);
+      
+      loadCache();
+      initializeTeamData(miningContract, 0).then(saveCache);
+    }
+  }, [miningContract]);
+
+  useEffect(() => {
+  if (account && miningContract) {
+    // 使用防抖，1秒内只执行最后一次
+    const debouncedLoad = debounce(() => {
+      loadUserData();
+      loadBalances();
+    }, 1000);
+    
+    debouncedLoad();
+    
+    // 清理函数
+    return () => {
+      if (debouncedLoad.cancel) debouncedLoad.cancel();
+    };
+  }
+  loadGlobalData();
+}, [account, miningContract]);
+
+  const handleGenerateInviteCode = async () => {
+    setInviteLoading(true);
+    try {
+      const tx = await miningContract.generateInviteCode();
+      await tx.wait();
+      alert('邀请码生成成功！');
+      loadUserData();
+    } catch (error) {
+      console.error(error);
+      alert('失败：' + error.message);
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
+  const handleDeposit = async () => {
+    if (!depositAmount || parseFloat(depositAmount) <= 0) return;
+    setDepositLoading(true);
+    try {
+      const usdt = getUSDTContract();
+      const amount = ethers.utils.parseEther(depositAmount);
+      
+      const approveTx = await usdt.approve(MINING_CONTRACT_ADDRESS, amount);
+      await approveTx.wait();
+      
+      const tx = await miningContract.deposit(amount);
+      await tx.wait();
+      
+      alert('存款成功！');
+      loadUserData();
+      loadBalances();
+      setDepositAmount('');
+    } catch (error) {
+      console.error('存款失败', error);
+      alert('失败：' + error.message);
+    } finally {
+      setDepositLoading(false);
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!withdrawAmount || parseFloat(withdrawAmount) <= 0) return;
+    setWithdrawLoading(true);
+    try {
+      const amount = ethers.utils.parseEther(withdrawAmount);
+      const tx = await miningContract.withdraw(amount);
+      await tx.wait();
+      alert('取款成功！');
+      loadUserData();
+      loadBalances();
+      setWithdrawAmount('');
+    } catch (error) {
+      console.error(error);
+      alert('失败：' + error.message);
+    } finally {
+      setWithdrawLoading(false);
+    }
+  };
+
+  const handleClaim = async () => {
+    setClaimLoading(true);
+    try {
+      const tx = await miningContract.claimReward();
+      await tx.wait();
+      alert('领取成功！');
+      loadUserData();
+      loadBalances();
+    } catch (error) {
+      console.error(error);
+      alert('失败：' + error.message);
+    } finally {
+      setClaimLoading(false);
+    }
+  };
+
+  const handleBind = async () => {
+    if (!ethers.utils.isAddress(bindAddress)) {
+      alert('请输入有效地址');
+      return;
+    }
+    setBindLoading(true);
+    try {
+      const tx = await miningContract.bindDownline(bindAddress, { value: ethers.utils.parseEther('0.001') });
+      await tx.wait();
+      alert('绑定成功！');
+      setBindAddress('');
+      await updateTeamData(miningContract);
+      saveCache();
+    } catch (error) {
+      console.error(error);
+      alert('失败：' + error.message);
+    } finally {
+      setBindLoading(false);
+    }
+  };
+
+  const handleAddPool = async () => {
+    if (!ethers.utils.isAddress(newPoolAddress)) {
+      alert('请输入有效地址');
+      return;
+    }
+    setPoolLoading(true);
+    try {
+      const tx = await miningContract.setMiningPool(newPoolAddress, true);
+      await tx.wait();
+      alert('矿池添加成功！');
+      setNewPoolAddress('');
+    } catch (error) {
+      console.error(error);
+      alert('失败：' + error.message);
+    } finally {
+      setPoolLoading(false);
+    }
+  };
+
+  const handleRemovePool = async (poolAddress) => {
+    if (!window.confirm('确定移除该矿池？')) return;
+    setPoolLoading(true);
+    try {
+      const tx = await miningContract.setMiningPool(poolAddress, false);
+      await tx.wait();
+      alert('矿池移除成功！');
+    } catch (error) {
+      console.error(error);
+      alert('失败：' + error.message);
+    } finally {
+      setPoolLoading(false);
+    }
+  };
+
+  const handleSkipInvite = () => {
+    setShowInviteModal(false);
+    alert('您已跳过邀请码');
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8">
+      <div className="max-w-4xl mx-auto px-4">
+        <header className="bg-white rounded-2xl shadow-xl p-6 mb-8">
+          <div className="flex flex-col md:flex-row items-center justify-between">
+            <h1 className="text-3xl font-bold text-gray-800 mb-4 md:mb-0">🌾 文化挖矿</h1>
+            <div className="flex items-center space-x-4">
+              {!active ? (
+                <>
+                  <button onClick={() => connectWallet(injected)} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    MetaMask
+                  </button>
+                  <button onClick={() => connectWallet(walletconnect)} className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                    WalletConnect
+                  </button>
+                </>
+              ) : (
+                <div className="flex items-center space-x-4">
+                  <span className="text-gray-600">
+                    {account.slice(0,6)}...{account.slice(-4)}
+                  </span>
+                  {poolManager?.isPool(account) && (
+                    <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded">⛏️ 矿池</span>
+                  )}
+                  {isNode && (
+                    <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">🌟 节点</span>
+                  )}
+                  <button onClick={disconnectWallet} className="px-4 py-2 bg-red-500 text-white rounded-lg">
+                    断开
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {active && (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
+              <div className="bg-white rounded-xl shadow-lg p-4">
+                <h3 className="text-gray-500 text-sm">USDT余额</h3>
+                <p className="text-base md:text-xl font-bold">{parseFloat(usdtBalance).toFixed(4)}</p>
+              </div>
+              <div className="bg-white rounded-xl shadow-lg p-4">
+                <h3 className="text-gray-500 text-sm">CULTURE余额</h3>
+                <p className="text-base md:text-xl font-bold">{parseFloat(cultureBalance).toFixed(4)}</p>
+              </div>
+              <div className="bg-white rounded-xl shadow-lg p-4">
+                <h3 className="text-gray-500 text-sm">基础价格</h3>
+                <p className="text-base md:text-xl font-bold">{parseFloat(currentPrice).toFixed(6)} USDT</p>
+              </div>
+              <div className="bg-white rounded-xl shadow-lg p-4">
+                <h3 className="text-gray-500 text-sm">市场价</h3>
+                <p className="text-base md:text-xl font-bold">{marketPrice !== '0' ? parseFloat(marketPrice).toFixed(6) : '--'} USDT</p>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6 md:mb-8">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                <h2 className="text-xl font-semibold">我的邀请码</h2>
+                {!myInviteCode ? (
+                  <button
+                    onClick={handleGenerateInviteCode}
+                    disabled={inviteLoading}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                  >
+                    {inviteLoading ? '处理中...' : '生成邀请码'}
+                  </button>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <span className="font-mono text-lg font-bold text-blue-600">{myInviteCode}</span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(myInviteCode);
+                        alert('已复制');
+                      }}
+                      className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 transition text-sm"
+                    >
+                      复制
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {userInfo && (
+              <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6 md:mb-8">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-semibold">我的账户</h2>
+                  <button
+                    onClick={() => {
+                      setSelectedUser(account);
+                      setShowTeamView(true);
+                    }}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm flex items-center"
+                  >
+                    👥 我的团队
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <p className="text-gray-500 text-xs md:text-sm">存款基础</p>
+                    <p className="text-base md:text-lg font-medium">{parseFloat(userInfo.depositBase).toFixed(4)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 text-xs md:text-sm">可提取</p>
+                    <p className="text-base md:text-lg font-medium">{parseFloat(userInfo.remainingDeposit).toFixed(4)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 text-xs md:text-sm">待领取</p>
+                    <p className="text-base md:text-lg font-medium text-green-600">{parseFloat(pendingReward).toFixed(4)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 text-xs md:text-sm">累计获得</p>
+                    <p className="text-base md:text-lg font-medium">{parseFloat(userInfo.totalRewarded).toFixed(4)}</p>
+                  </div>
+                </div>
+                
+                {parseFloat(pendingReward) > 0 && (
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      onClick={handleClaim}
+                      disabled={claimLoading}
+                      className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                    >
+                      {claimLoading ? '处理中...' : '领取奖励'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isNode && nodeInfo && (
+              <div className="bg-gradient-to-r from-amber-50 to-yellow-50 rounded-xl shadow-lg p-4 md:p-6 mb-6 md:mb-8 border border-amber-200">
+                <h2 className="text-xl font-semibold mb-3 flex items-center">
+                  <span className="mr-2">🌟</span> 节点收益
+                </h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-white/50 rounded p-2 md:p-3">
+                    <p className="text-xs text-gray-600">已领取</p>
+                    <p className="text-sm md:text-base font-bold text-amber-700">{parseFloat(nodeInfo.claimed).toFixed(4)}</p>
+                  </div>
+                  <div className="bg-white/50 rounded p-2 md:p-3">
+                    <p className="text-xs text-gray-600">待领取</p>
+                    <p className="text-sm md:text-base font-bold text-green-600">{parseFloat(nodeInfo.pending).toFixed(4)}</p>
+                  </div>
+                  <div className="bg-white/50 rounded p-2 md:p-3">
+                    <p className="text-xs text-gray-600">累计收益</p>
+                    <p className="text-sm md:text-base font-bold">{parseFloat(nodeInfo.total).toFixed(4)}</p>
+                  </div>
+                  <div className="bg-white/50 rounded p-2 md:p-3">
+                    <p className="text-xs text-gray-600">上次快照</p>
+                    <p className="text-sm md:text-base font-bold">{parseFloat(nodeInfo.lastSnapshot).toFixed(4)}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+              <div className="bg-white rounded-xl shadow-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold mb-4">存入 USDT</h3>
+                <input
+                  type="number"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  placeholder="输入数量"
+                  className="w-full p-3 border rounded-lg mb-4 text-sm"
+                />
+                <button
+                  onClick={handleDeposit}
+                  disabled={depositLoading}
+                  className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                >
+                  {depositLoading ? '处理中...' : '存入'}
+                </button>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-lg p-4 md:p-6">
+                <h3 className="text-lg font-semibold mb-4">提取 USDT</h3>
+                <input
+                  type="number"
+                  value={withdrawAmount}
+                  onChange={(e) => setWithdrawAmount(e.target.value)}
+                  placeholder="输入数量"
+                  className="w-full p-3 border rounded-lg mb-4 text-sm"
+                />
+                <button
+                  onClick={handleWithdraw}
+                  disabled={withdrawLoading}
+                  className="w-full py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-sm"
+                >
+                  {withdrawLoading ? '处理中...' : '提取'}
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mt-4 md:mt-6">
+              <h3 className="text-lg font-semibold mb-4">绑定下线（需支付0.001 BNB）</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input
+                  type="text"
+                  value={bindAddress}
+                  onChange={(e) => setBindAddress(e.target.value)}
+                  placeholder="输入下线钱包地址"
+                  className="p-3 border rounded-lg text-sm"
+                />
+                <button
+                  onClick={handleBind}
+                  disabled={bindLoading}
+                  className="px-8 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
+                >
+                  {bindLoading ? '处理中...' : '绑定'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {isOwner && (
+          <div className="mt-8 bg-gray-900 text-white rounded-xl p-6">
+            <h2 className="text-xl font-bold mb-4">👑 管理员面板</h2>
+            
+            <div className="mt-6 border-t border-gray-700 pt-4">
+              <h3 className="text-lg font-semibold mb-3">⛏️ 矿池管理</h3>
+              
+              <div className="mb-4">
+                <label className="block text-sm text-gray-400 mb-1">添加矿池地址</label>
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={newPoolAddress}
+                    onChange={(e) => setNewPoolAddress(e.target.value)}
+                    placeholder="0x..."
+                    className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm"
+                  />
+                  <button
+                    onClick={handleAddPool}
+                    disabled={poolLoading || !newPoolAddress}
+                    className="px-4 py-2 bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm"
+                  >
+                    {poolLoading ? '处理中...' : '添加'}
+                  </button>
+                </div>
+              </div>
+              
+              <div>
+                <h4 className="text-sm font-medium mb-2">当前矿池列表 ({pools.length})</h4>
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {pools.map(pool => (
+                    <div key={pool} className="flex items-center justify-between bg-gray-800 p-2 rounded">
+                      <span className="font-mono text-xs md:text-sm">{pool.slice(0,6)}...{pool.slice(-4)}</span>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => {
+                            setSelectedUser(pool);
+                            setShowTeamView(true);
+                          }}
+                          className="px-2 py-1 bg-blue-600 text-xs rounded"
+                        >
+                          查看团队
+                        </button>
+                        <button
+                          onClick={() => handleRemovePool(pool)}
+                          disabled={poolLoading}
+                          className="px-2 py-1 bg-red-600 text-xs rounded hover:bg-red-700 disabled:opacity-50"
+                        >
+                          移除
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showTeamView && selectedUser && miningContract && (
+          <TeamView
+            contract={miningContract}
+            userAddress={selectedUser}
+            poolManager={poolManager}
+            onClose={() => {
+              setShowTeamView(false);
+              setSelectedUser(null);
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default App;
