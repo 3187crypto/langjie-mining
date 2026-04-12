@@ -1,6 +1,8 @@
 {
+  "builds": [
+    { "src": "build/**", "use": "@vercel/static" }
+  ],
   "routes": [
-    { "src": "/static/.*", "headers": { "Cache-Control": "public, max-age=31536000, immutable" } },
-    { "src": "/.*", "dest": "/index.html" }
+    { "src": "/(.*)", "dest": "/build/$1" }
   ]
 }
