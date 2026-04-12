@@ -1,9 +1,9 @@
 {
-  "builds": [
-    { "src": "build/**", "use": "@vercel/static" }
-  ],
-  "routes": [
-    { "src": "/", "dest": "/build/index.html" },
-    { "src": "/(.*)", "dest": "/build/index.html" }
+  "buildCommand": "npm run build",
+  "outputDirectory": "build",
+  "devCommand": "npm start",
+  "installCommand": "npm install",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
