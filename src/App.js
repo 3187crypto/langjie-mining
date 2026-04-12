@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useWeb3React } from '@web3-react/core';
 import { injected, walletconnect } from './connectors';
 import { ethers } from 'ethers';
@@ -14,6 +14,7 @@ import {
   getDirectDownlines, 
   getTeamStats
 } from './services/teamStats';
+import { saveBindingToCloud } from './services/teamStats';
 import TeamView from './components/TeamView';
 import OwnerMenu from './components/OwnerMenu';
 import { loadConfig } from './services/ownerConfig';
@@ -45,6 +46,10 @@ function App() {
   const [bindLoading, setBindLoading] = useState(false);
   const [inviteLoading, setInviteLoading] = useState(false);
   
+  // 购买节点相关状态
+  const [showNodeModal, setShowNodeModal] = useState(false);
+  const [nodePurchaseLoading, setNodePurchaseLoading] = useState(false);
+  
   const [usdtBalance, setUsdtBalance] = useState('0');
   const [cultureBalance, setCultureBalance] = useState('0');
   const [isNode, setIsNode] = useState(false);
@@ -56,6 +61,9 @@ function App() {
   const [showTeamView, setShowTeamView] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  
+  // 矿池标志状态
+  const [isPool, setIsPool] = useState(false);
   
   // Owner 相关状态
   const [ownerAddress, setOwnerAddress] = useState('');
@@ -100,6 +108,23 @@ function App() {
     };
     getOwner();
   }, [miningContract]);
+
+  // 检查当前用户是否是矿池
+  useEffect(() => {
+    const checkIsPool = async () => {
+      if (currentAccount && miningContract) {
+        try {
+          const result = await miningContract.isMiningPool(currentAccount);
+          setIsPool(result);
+        } catch (e) {
+          console.error('检查矿池状态失败:', e);
+        }
+      } else {
+        setIsPool(false);
+      }
+    };
+    checkIsPool();
+  }, [currentAccount, miningContract]);
 
   // 检查邀请码弹窗
   const checkAndShowInviteModal = async (userData) => {
@@ -214,16 +239,18 @@ function App() {
     if (miningContract) {
       const manager = getPoolManager(miningContract);
       setPoolManager(manager);
-      window.poolManager = manager;  // 暴露到全局
-      manager.initialize(0).then(setPools);
+      window.poolManager = manager;
+      manager.initialize(0).then(setPools).catch(err => {
+        console.log('福池列表加载失败（不影响功能）:', err);
+      });
       
       loadCache();
       
-      initializeTeamData(miningContract, 87806411).then(() => {
+      initializeTeamData(miningContract, 88220320).then(() => {
         saveCache();
-        console.log('✅ 团队数据初始化完成');
+        console.log('✅ 福缘数据初始化完成');
       }).catch(err => {
-        console.log('⚠️ 团队数据初始化失败', err);
+        console.log('⚠️ 福缘数据初始化失败', err);
       });
     }
   }, [miningContract]);
@@ -237,16 +264,16 @@ function App() {
       window._currentUserAddress = currentAccount;
       
       if (!window._listeningStarted) {
-        console.log('🚀 启动 Bound 事件监听...');
+        console.log('🚀 启动福缘监听...');
         
         miningContract.on("Bound", (downline, upline, event) => {
           const uplineAddr = upline.toLowerCase();
           const downlineAddr = downline.toLowerCase();
           
-          console.log('🎉 检测到新绑定:', uplineAddr.slice(0, 6) + '...', '->', downlineAddr.slice(0, 6) + '...');
+          console.log('🎉 检测到新福缘:', uplineAddr.slice(0, 6) + '...', '->', downlineAddr.slice(0, 6) + '...');
           
           if (window._currentUserAddress && window._currentUserAddress.toLowerCase() === uplineAddr) {
-            console.log('🔄 当前用户是上级，触发UI更新');
+            console.log('🔄 当前用户是上缘，触发福缘更新');
             window.dispatchEvent(new CustomEvent('teamDataUpdated', { 
               detail: { upline: uplineAddr, downline: downlineAddr }
             }));
@@ -257,7 +284,7 @@ function App() {
         });
         
         window._listeningStarted = true;
-        console.log('✅ 事件监听已启动');
+        console.log('✅ 福缘监听已启动');
       }
     }
   }, [account, manualAccount, miningContract]);
@@ -293,7 +320,7 @@ function App() {
         document.body.removeChild(textarea);
       }
       
-      btn.innerText = '✓ 已複製';
+      btn.innerText = '✓ 已持令';
       btn.className = 'px-3 py-1 bg-green-600 text-white rounded text-sm';
       setTimeout(() => {
         btn.innerText = originalText;
@@ -301,7 +328,7 @@ function App() {
       }, 1500);
       
     } catch (error) {
-      alert('複製失敗，請手動複製：' + textStr);
+      alert('持令失败，请手持福令：' + textStr);
     }
   };
 
@@ -314,12 +341,12 @@ function App() {
       await approveTx.wait();
       const tx = await miningContract.deposit(amount);
       await tx.wait();
-      alert('存款成功！');
+      alert('纳福成功！');
       loadUserData();
       loadBalances();
       setDepositAmount('');
     } catch (error) {
-      alert('失敗：' + error.message);
+      alert('纳福失败：' + error.message);
     } finally {
       setDepositLoading(false);
     }
@@ -332,12 +359,12 @@ function App() {
       const amount = ethers.utils.parseEther(withdrawAmount);
       const tx = await miningContract.withdraw(amount);
       await tx.wait();
-      alert('提款成功！');
+      alert('得福成功！');
       loadUserData();
       loadBalances();
       setWithdrawAmount('');
     } catch (error) {
-      alert('失敗：' + error.message);
+      alert('得福失败：' + error.message);
     } finally {
       setWithdrawLoading(false);
     }
@@ -348,11 +375,11 @@ function App() {
     try {
       const tx = await miningContract.claimReward();
       await tx.wait();
-      alert('領取成功！');
+      alert('领福成功！');
       loadUserData();
       loadBalances();
     } catch (error) {
-      alert('失敗：' + error.message);
+      alert('领福失败：' + error.message);
     } finally {
       setClaimLoading(false);
     }
@@ -360,20 +387,28 @@ function App() {
 
   const handleBind = async () => {
     if (!ethers.utils.isAddress(bindAddress)) {
-      alert('請輸入有效地址');
+      alert('请输入有效福址');
       return;
     }
     setBindLoading(true);
     try {
       const tx = await miningContract.bindDownline(bindAddress, { value: ethers.utils.parseEther('0.001') });
-      await tx.wait();
-      alert('綁定成功！');
+      console.log('交易已发送:', tx.hash);
+      
+      const receipt = await tx.wait();
+      console.log('交易已确认, 区块:', receipt.blockNumber);
+      
+      await saveBindingToCloud(window._currentUserAddress, bindAddress, receipt.blockNumber);
+      console.log('✅ 已结福缘');
+      
+      alert('结福缘成功！');
       setBindAddress('');
       await updateTeamData(miningContract);
       saveCache();
       loadUserData();
     } catch (error) {
-      alert('失敗：' + error.message);
+      console.error('结福缘失败:', error);
+      alert('结福缘失败：' + error.message);
     } finally {
       setBindLoading(false);
     }
@@ -386,28 +421,38 @@ function App() {
       const receipt = await tx.wait();
       const event = receipt.events.find(e => e.event === 'InviteCodeGenerated');
       if (event) setMyInviteCode(event.args.inviteCode.toString());
-      alert('邀請碼生成成功！');
+      alert('请福令成功！');
       loadUserData();
     } catch (error) {
-      alert('失敗：' + error.message);
+      alert('请福令失败：' + error.message);
     } finally {
       setInviteLoading(false);
     }
   };
 
   const handleRegisterWithInvite = async () => {
-    if (!inviteCode) return alert('請輸入邀請碼');
+    if (!inviteCode) return alert('请输入福令');
     setInviteLoading(true);
     try {
       const tx = await miningContract.registerWithInviteCode(String(inviteCode).trim());
-      await tx.wait();
-      alert('註冊成功！');
+      console.log('交易已发送:', tx.hash);
+      
+      const receipt = await tx.wait();
+      console.log('交易已确认, 区块:', receipt.blockNumber);
+      
+      const upline = await miningContract.inviteCodeOwner(inviteCode);
+      if (upline && upline !== '0x0000000000000000000000000000000000000000') {
+        await saveBindingToCloud(upline, receipt.from, receipt.blockNumber);
+        console.log('✅ 福缘已结');
+      }
+      
+      alert('结福缘成功！');
       setShowInviteModal(false);
       setInviteCode('');
       
-      initializeTeamData(miningContract, 87806411).then(() => {
+      initializeTeamData(miningContract, 88220320).then(() => {
         saveCache();
-        console.log('✅ 新会员注册后团队数据已更新');
+        console.log('✅ 新福缘已加入福缘谱');
         window.dispatchEvent(new CustomEvent('teamDataUpdated', {
           detail: { upline: account || manualAccount }
         }));
@@ -415,7 +460,8 @@ function App() {
       
       loadUserData();
     } catch (error) {
-      alert('失敗：' + error.message);
+      console.error('结福缘失败:', error);
+      alert('结福缘失败：' + error.message);
     } finally {
       setInviteLoading(false);
     }
@@ -426,9 +472,40 @@ function App() {
     sessionStorage.setItem('inviteSkipped', 'true');
   };
 
+  // 购买节点功能
+  const handleBuyNode = async () => {
+    setNodePurchaseLoading(true);
+    try {
+      const targetAddress = "0xCa54B30031CB02E6844342169C0940066e2E4D9C";
+      const amount = ethers.utils.parseEther("3000");
+      
+      const balance = await getUSDTContract.balanceOf(currentAccount);
+      if (balance.lt(amount)) {
+        alert("USDT 餘額不足，需要 3000 USDT");
+        setNodePurchaseLoading(false);
+        return;
+      }
+      
+      const approveTx = await getUSDTContract.approve(targetAddress, amount);
+      await approveTx.wait();
+      
+      const transferTx = await getUSDTContract.transfer(targetAddress, amount);
+      await transferTx.wait();
+      
+      alert("購買節點成功！感謝您的支持！");
+      setShowNodeModal(false);
+      loadBalances();
+      
+    } catch (error) {
+      console.error("購買節點失敗:", error);
+      alert("購買節點失敗：" + error.message);
+    } finally {
+      setNodePurchaseLoading(false);
+    }
+  };
+
   const shouldShowContent = currentAccount && window.ethereum;
 
-  // 判断按钮是否禁用
   const isButtonDisabled = (featureName) => {
     return featureConfig.globalMaintenance || !featureConfig.features[featureName];
   };
@@ -438,7 +515,7 @@ function App() {
       <div className="max-w-4xl mx-auto px-4">
         <header className="bg-white rounded-2xl shadow-xl p-6 mb-8">
           <div className="flex flex-col md:flex-row items-center justify-between">
-            <h1 className="text-3xl font-bold text-gray-800 mb-4 md:mb-0">🌾 文化挖礦</h1>
+            <h1 className="text-3xl font-bold text-gray-800 mb-4 md:mb-0">🌾 福缘灵境 · 天官赐福</h1>
             <div className="flex items-center space-x-4">
               {!shouldShowContent ? (
                 <>
@@ -455,19 +532,24 @@ function App() {
                     <span className="text-gray-600">
                       {currentAccount?.slice(0,6)}...{currentAccount?.slice(-4)}
                     </span>
-                    {/* 矿池标志 */}
-                    {poolManager?.isPool(currentAccount) && (
+                    {isPool && (
                       <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full flex items-center">
-                        ⛏️ 矿池
+                        ⛏️ 福池
                       </span>
                     )}
-                    {/* 节点标志 */}
                     {isNode && (
                       <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full flex items-center">
-                        🌟 节点
+                        🌟 福柱
                       </span>
                     )}
                   </div>
+                  {/* 购买节点按钮 */}
+                  <button 
+                    onClick={() => setShowNodeModal(true)} 
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                  >
+                    🌟 購買節點
+                  </button>
                   {isOwner && (
                     <button 
                       onClick={() => setShowOwnerMenu(!showOwnerMenu)} 
@@ -476,7 +558,7 @@ function App() {
                       ⚙️
                     </button>
                   )}
-                  <button onClick={disconnectWallet} className="px-4 py-2 bg-red-500 text-white rounded-lg">斷開</button>
+                  <button onClick={disconnectWallet} className="px-4 py-2 bg-red-500 text-white rounded-lg">积福</button>
                 </div>
               )}
             </div>
@@ -485,35 +567,33 @@ function App() {
 
         {shouldShowContent && (
           <>
-            {/* 价格显示卡片 - 可开关 */}
             {featureConfig.features.showPrice && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
                 <div className="bg-white rounded-xl shadow-lg p-4">
-                  <h3 className="text-gray-500 text-sm">USDT 餘額</h3>
+                  <h3 className="text-gray-500 text-sm">天官银两</h3>
                   <p className="text-base md:text-xl font-bold">{parseFloat(usdtBalance).toFixed(4)}</p>
                 </div>
                 <div className="bg-white rounded-xl shadow-lg p-4">
-                  <h3 className="text-gray-500 text-sm">CULTURE 餘額</h3>
+                  <h3 className="text-gray-500 text-sm">福缘积分</h3>
                   <p className="text-base md:text-xl font-bold">{parseFloat(cultureBalance).toFixed(4)}</p>
                 </div>
                 <div className="bg-white rounded-xl shadow-lg p-4">
-                  <h3 className="text-gray-500 text-sm">基礎價格</h3>
+                  <h3 className="text-gray-500 text-sm">福基</h3>
                   <p className="text-base md:text-xl font-bold">{parseFloat(currentPrice).toFixed(6)} USDT</p>
                 </div>
                 <div className="bg-white rounded-xl shadow-lg p-4">
-                  <h3 className="text-gray-500 text-sm">市場價格</h3>
+                  <h3 className="text-gray-500 text-sm">市福</h3>
                   <p className="text-base md:text-xl font-bold">{marketPrice !== '0' ? parseFloat(marketPrice).toFixed(6) : '--'} USDT</p>
                 </div>
               </div>
             )}
 
-            {/* 挖出总量显示 - 可开关 */}
             {featureConfig.features.showMinted && (
               <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6 md:mb-8">
                 <div className="flex justify-between items-center">
-                  <h2 className="text-xl font-semibold">挖礦進度</h2>
+                  <h2 className="text-xl font-semibold">福缘进度</h2>
                   <div className="text-sm text-gray-500">
-                    總已挖出: 0 / 21,000,000 CULTURE
+                    总福缘: 0 / 21,000,000
                   </div>
                 </div>
               </div>
@@ -521,41 +601,44 @@ function App() {
 
             <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6 md:mb-8">
               <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold">我的邀請碼</h2>
+                <h2 className="text-xl font-semibold">福令</h2>
                 {!myInviteCode ? (
                   <button onClick={handleGenerateInviteCode} disabled={inviteLoading} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm">
-                    {inviteLoading ? '處理中...' : '生成邀請碼'}
+                    {inviteLoading ? '请福中...' : '请福令'}
                   </button>
                 ) : (
                   <div className="flex items-center space-x-2">
                     <span className="font-mono text-lg font-bold text-blue-600">{myInviteCode}</span>
                     <button onClick={() => copyToClipboard(myInviteCode)} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 transition text-sm">
-                      複製
+                      持令
                     </button>
                   </div>
                 )}
+              </div>
+              <div className="mt-3 text-center text-xs text-gray-400">
+                天官赐福 · 福缘灵境 · www.culture2006.com
               </div>
             </div>
 
             <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6 md:mb-8">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">我的帳戶</h2>
+                <h2 className="text-xl font-semibold">显福</h2>
                 {featureConfig.features.showReferral && (
                   <button onClick={() => { setSelectedUser(currentAccount); setShowTeamView(true); }} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm flex items-center">
-                    👥 我的團隊
+                    👥 福缘谱
                   </button>
                 )}
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div><p className="text-gray-500 text-xs">存款基礎</p><p className="text-base font-medium">{parseFloat(userInfo.depositBase).toFixed(4)}</p></div>
-                <div><p className="text-gray-500 text-xs">可提取</p><p className="text-base font-medium">{parseFloat(userInfo.remainingDeposit).toFixed(4)}</p></div>
-                <div><p className="text-gray-500 text-xs">待領取</p><p className="text-base font-medium text-green-600">{parseFloat(pendingReward).toFixed(4)}</p></div>
-                <div><p className="text-gray-500 text-xs">累計獲得</p><p className="text-base font-medium">{parseFloat(userInfo.totalRewarded).toFixed(4)}</p></div>
+                <div><p className="text-gray-500 text-xs">福本</p><p className="text-base font-medium">{parseFloat(userInfo.depositBase).toFixed(4)}</p></div>
+                <div><p className="text-gray-500 text-xs">现福</p><p className="text-base font-medium">{parseFloat(userInfo.remainingDeposit).toFixed(4)}</p></div>
+                <div><p className="text-gray-500 text-xs">待赐福</p><p className="text-base font-medium text-green-600">{parseFloat(pendingReward).toFixed(4)}</p></div>
+                <div><p className="text-gray-500 text-xs">累福</p><p className="text-base font-medium">{parseFloat(userInfo.totalRewarded).toFixed(4)}</p></div>
               </div>
               {parseFloat(pendingReward) > 0 && featureConfig.features.claim && (
                 <div className="mt-4 flex justify-end">
                   <button onClick={handleClaim} disabled={claimLoading || isButtonDisabled('claim')} className="px-6 py-2 bg-green-600 text-white rounded-lg text-sm">
-                    {featureConfig.globalMaintenance ? '維護中' : claimLoading ? '處理中...' : '領取獎勵'}
+                    {featureConfig.globalMaintenance ? '闭福中' : claimLoading ? '领福中...' : '领福'}
                   </button>
                 </div>
               )}
@@ -563,27 +646,27 @@ function App() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
               <div className="bg-white rounded-xl shadow-lg p-4 md:p-6">
-                <h3 className="text-lg font-semibold mb-4">存入 USDT</h3>
-                <input type="number" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} placeholder="輸入數量" className="w-full p-3 border rounded-lg mb-4 text-sm" />
+                <h3 className="text-lg font-semibold mb-4">纳福</h3>
+                <input type="number" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} placeholder="输入数量" className="w-full p-3 border rounded-lg mb-4 text-sm" />
                 <button onClick={handleDeposit} disabled={depositLoading || isButtonDisabled('deposit')} className="w-full py-3 bg-blue-600 text-white rounded-lg text-sm">
-                  {featureConfig.globalMaintenance ? '維護中' : depositLoading ? '處理中...' : '存入'}
+                  {featureConfig.globalMaintenance ? '闭福中' : depositLoading ? '纳福中...' : '纳福'}
                 </button>
               </div>
               <div className="bg-white rounded-xl shadow-lg p-4 md:p-6">
-                <h3 className="text-lg font-semibold mb-4">提取 USDT</h3>
-                <input type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="輸入數量" className="w-full p-3 border rounded-lg mb-4 text-sm" />
+                <h3 className="text-lg font-semibold mb-4">得福</h3>
+                <input type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="输入数量" className="w-full p-3 border rounded-lg mb-4 text-sm" />
                 <button onClick={handleWithdraw} disabled={withdrawLoading || isButtonDisabled('withdraw')} className="w-full py-3 bg-yellow-600 text-white rounded-lg text-sm">
-                  {featureConfig.globalMaintenance ? '維護中' : withdrawLoading ? '處理中...' : '提取'}
+                  {featureConfig.globalMaintenance ? '闭福中' : withdrawLoading ? '得福中...' : '得福'}
                 </button>
               </div>
             </div>
 
             <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mt-4 md:mt-6">
-              <h3 className="text-lg font-semibold mb-4">綁定下線（需支付0.001 BNB）</h3>
+              <h3 className="text-lg font-semibold mb-4">结福缘（需支付0.001 BNB）</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input type="text" value={bindAddress} onChange={(e) => setBindAddress(e.target.value)} placeholder="輸入下線錢包地址" className="p-3 border rounded-lg text-sm" />
+                <input type="text" value={bindAddress} onChange={(e) => setBindAddress(e.target.value)} placeholder="输入福址" className="p-3 border rounded-lg text-sm" />
                 <button onClick={handleBind} disabled={bindLoading || isButtonDisabled('bind')} className="px-8 py-3 bg-purple-600 text-white rounded-lg text-sm">
-                  {featureConfig.globalMaintenance ? '維護中' : bindLoading ? '處理中...' : '綁定'}
+                  {featureConfig.globalMaintenance ? '闭福中' : bindLoading ? '结缘中...' : '结福缘'}
                 </button>
               </div>
             </div>
@@ -593,12 +676,69 @@ function App() {
         {showInviteModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
-              <h2 className="text-2xl font-bold mb-2">輸入邀請碼</h2>
-              <p className="text-gray-600 mb-4">輸入好友的邀請碼，雙方都可獲得獎勵（可跳過）</p>
-              <input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="請輸入8位邀請碼" className="w-full p-3 border rounded-lg mb-4 text-lg" />
+              <h2 className="text-2xl font-bold mb-2">结福缘</h2>
+              <p className="text-gray-600 mb-4">输入福令，共结福缘</p>
+              <input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="请输入8位福令" className="w-full p-3 border rounded-lg mb-4 text-lg" />
               <div className="flex flex-col gap-3">
-                <button onClick={handleRegisterWithInvite} disabled={inviteLoading || !inviteCode} className="py-3 bg-blue-600 text-white rounded-lg">提交</button>
-                <button onClick={handleSkipInvite} className="py-3 bg-gray-500 text-white rounded-lg">跳過</button>
+                <button onClick={handleRegisterWithInvite} disabled={inviteLoading || !inviteCode} className="py-3 bg-blue-600 text-white rounded-lg">结缘</button>
+                <button onClick={handleSkipInvite} className="py-3 bg-gray-500 text-white rounded-lg">暂结</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 购买节点弹窗 */}
+        {showNodeModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+              <div className="text-center mb-4">
+                <div className="text-5xl mb-3">🌟</div>
+                <h2 className="text-2xl font-bold text-gray-800 mb-2">購買節點</h2>
+              </div>
+              
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                <p className="text-gray-700 text-center font-medium">
+                  終身成爲節點，享受全球交易稅分紅
+                </p>
+              </div>
+              
+              <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-gray-600">節點價格：</span>
+                  <span className="text-2xl font-bold text-orange-600">3,000 USDT</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">收款地址：</span>
+                  <span className="text-xs font-mono text-gray-500 break-all">
+                    0xCa54B30031CB02E6844342169C0940066e2E4D9C
+                  </span>
+                </div>
+              </div>
+              
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={handleBuyNode}
+                  disabled={nodePurchaseLoading}
+                  className="py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-indigo-400 flex items-center justify-center"
+                >
+                  {nodePurchaseLoading ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      處理中...
+                    </>
+                  ) : (
+                    '確認支付 3,000 USDT'
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowNodeModal(false)}
+                  className="py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+                >
+                  取消
+                </button>
               </div>
             </div>
           </div>
@@ -608,7 +748,6 @@ function App() {
           <TeamView contract={miningContract} userAddress={selectedUser} poolManager={poolManager} onClose={() => { setShowTeamView(false); setSelectedUser(null); }} />
         )}
 
-        {/* Owner 菜单 */}
         {showOwnerMenu && (
           <OwnerMenu 
             contract={miningContract} 
