@@ -325,3 +325,4 @@ if (typeof window !== 'undefined') {
     getDebugInfo
   };
 }
+export { saveBindingToCloud };
