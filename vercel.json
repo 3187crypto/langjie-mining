@@ -2,5 +2,10 @@
   "buildCommand": "npm run build",
   "outputDirectory": "build",
   "devCommand": "npm start",
-  "installCommand": "npm install"
+  "installCommand": "npm install",
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/contracts/(.*)", "dest": "/contracts/$1" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
 }
