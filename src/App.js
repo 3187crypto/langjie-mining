@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useWeb3React } from '@web3-react/core';
 import { injected, walletconnect } from './connectors';
 import { ethers } from 'ethers';
