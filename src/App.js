@@ -68,7 +68,7 @@ function App() {
   const currentAccount = account || manualAccount;
   const isOwner = currentAccount && ownerAddress && currentAccount.toLowerCase() === ownerAddress.toLowerCase();
 
-  // 设置浏览器标签标题
+  // 设置浏览器标签标题为“天官赐福”
   useEffect(() => {
     document.title = '天官赐福';
   }, []);
@@ -176,7 +176,7 @@ function App() {
         } catch (e) {}
       }
     } catch (error) {
-      console.error('loadUserData 失敗:', error);
+      console.error('loadUserData 失败:', error);
     }
   }, [account, manualAccount, miningContract, myInviteCode]);
 
@@ -280,7 +280,7 @@ function App() {
     const inviteLink = `${window.location.origin}/?ref=${myInviteCode}`;
     try {
       await navigator.clipboard.writeText(inviteLink);
-      alert('已持令');
+      alert('复制成功');
     } catch (err) {
       const textarea = document.createElement('textarea');
       textarea.value = inviteLink;
@@ -288,7 +288,7 @@ function App() {
       textarea.select();
       document.execCommand('copy');
       document.body.removeChild(textarea);
-      alert('持令失败，请手持福令：' + inviteLink);
+      alert('复制失败，请手动复制：' + inviteLink);
     }
   };
 
@@ -324,9 +324,9 @@ function App() {
         document.execCommand('copy');
         document.body.removeChild(textarea);
       }
-      alert('已持令');
+      alert('复制成功');
     } catch (error) {
-      alert('持令失败，请手持福令：' + textStr);
+      alert('复制失败，请手动复制：' + textStr);
     }
   };
 
@@ -339,12 +339,12 @@ function App() {
       await approveTx.wait();
       const tx = await miningContract.deposit(amount);
       await tx.wait();
-      alert('纳福成功！');
+      alert('存款成功！');
       await loadUserData();
       await loadBalances();
       setDepositAmount('');
     } catch (error) {
-      alert('纳福失败：' + error.message);
+      alert('失敗：' + error.message);
     } finally {
       setDepositLoading(false);
     }
@@ -357,12 +357,12 @@ function App() {
       const amount = ethers.utils.parseEther(withdrawAmount);
       const tx = await miningContract.withdraw(amount);
       await tx.wait();
-      alert('得福成功！');
+      alert('提款成功！');
       await loadUserData();
       await loadBalances();
       setWithdrawAmount('');
     } catch (error) {
-      alert('得福失败：' + error.message);
+      alert('失敗：' + error.message);
     } finally {
       setWithdrawLoading(false);
     }
@@ -373,11 +373,11 @@ function App() {
     try {
       const tx = await miningContract.claimReward();
       await tx.wait();
-      alert('领福成功！');
+      alert('領取成功！');
       await loadUserData();
       await loadBalances();
     } catch (error) {
-      alert('领福失败：' + error.message);
+      alert('失敗：' + error.message);
     } finally {
       setClaimLoading(false);
     }
@@ -385,7 +385,7 @@ function App() {
 
   const handleBind = async () => {
     if (!ethers.utils.isAddress(bindAddress)) {
-      alert('请输入有效福址');
+      alert('請輸入有效地址');
       return;
     }
     setBindLoading(true);
@@ -393,13 +393,13 @@ function App() {
       const tx = await miningContract.bindDownline(bindAddress, { value: ethers.utils.parseEther('0.001') });
       const receipt = await tx.wait();
       await saveBindingToCloud(window._currentUserAddress, bindAddress, receipt.blockNumber);
-      alert('结福缘成功！');
+      alert('綁定成功！');
       setBindAddress('');
       await updateTeamData(miningContract);
       saveCache();
       await loadUserData();
     } catch (error) {
-      alert('结福缘失败：' + error.message);
+      alert('失敗：' + error.message);
     } finally {
       setBindLoading(false);
     }
@@ -412,17 +412,17 @@ function App() {
       const receipt = await tx.wait();
       const event = receipt.events.find(e => e.event === 'InviteCodeGenerated');
       if (event) setMyInviteCode(event.args.inviteCode.toString());
-      alert('请福令成功！');
+      alert('邀請碼生成成功！');
       await loadUserData();
     } catch (error) {
-      alert('请福令失败：' + error.message);
+      alert('失敗：' + error.message);
     } finally {
       setInviteLoading(false);
     }
   };
 
   const handleRegisterWithInvite = async () => {
-    if (!inviteCode) return alert('请输入福令');
+    if (!inviteCode) return alert('請輸入邀請碼');
     setInviteLoading(true);
     try {
       const tx = await miningContract.registerWithInviteCode(String(inviteCode).trim());
@@ -431,7 +431,7 @@ function App() {
       if (upline && upline !== '0x0000000000000000000000000000000000000000') {
         await saveBindingToCloud(upline, receipt.from, receipt.blockNumber);
       }
-      alert('结福缘成功！');
+      alert('註冊成功！');
       setShowInviteModal(false);
       setInviteCode('');
       localStorage.removeItem('pendingInviteCode');
@@ -442,7 +442,7 @@ function App() {
       });
       await loadUserData();
     } catch (error) {
-      alert('结福缘失败：' + error.message);
+      alert('失敗：' + error.message);
     } finally {
       setInviteLoading(false);
     }
@@ -503,8 +503,8 @@ function App() {
                 <div className="flex items-center space-x-4">
                   <div className="flex items-center space-x-2">
                     <span className="text-gray-600">{currentAccount?.slice(0,6)}...{currentAccount?.slice(-4)}</span>
-                    {isPool && <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">⛏️ 福池</span>}
-                    {isNode && <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full">🌟 福柱</span>}
+                    {isPool && <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">⛏️ 矿池</span>}
+                    {isNode && <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full">🌟 节点</span>}
                   </div>
                   {/* 购买节点按钮：仅当用户不是节点时显示 */}
                   {!isNode && (
@@ -513,7 +513,7 @@ function App() {
                     </button>
                   )}
                   {isOwner && <button onClick={() => setShowOwnerMenu(!showOwnerMenu)} className="px-3 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600">⚙️</button>}
-                  <button onClick={disconnectWallet} className="px-4 py-2 bg-red-500 text-white rounded-lg">积福</button>
+                  <button onClick={disconnectWallet} className="px-4 py-2 bg-red-500 text-white rounded-lg">斷開</button>
                 </div>
               )}
             </div>
@@ -524,64 +524,64 @@ function App() {
           <>
             {featureConfig.features.showPrice && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
-                <div className="bg-white rounded-xl shadow-lg p-4"><h3 className="text-gray-500 text-sm">天官银两</h3><p className="text-base md:text-xl font-bold">{parseFloat(usdtBalance).toFixed(4)}</p></div>
-                <div className="bg-white rounded-xl shadow-lg p-4"><h3 className="text-gray-500 text-sm">福缘积分</h3><p className="text-base md:text-xl font-bold">{parseFloat(cultureBalance).toFixed(4)}</p></div>
-                <div className="bg-white rounded-xl shadow-lg p-4"><h3 className="text-gray-500 text-sm">福基</h3><p className="text-base md:text-xl font-bold">{parseFloat(currentPrice).toFixed(6)} USDT</p></div>
-                <div className="bg-white rounded-xl shadow-lg p-4"><h3 className="text-gray-500 text-sm">市福</h3><p className="text-base md:text-xl font-bold">{marketPrice !== '0' ? parseFloat(marketPrice).toFixed(6) : '--'} USDT</p></div>
+                <div className="bg-white rounded-xl shadow-lg p-4"><h3 className="text-gray-500 text-sm">USDT 餘額</h3><p className="text-base md:text-xl font-bold">{parseFloat(usdtBalance).toFixed(4)}</p></div>
+                <div className="bg-white rounded-xl shadow-lg p-4"><h3 className="text-gray-500 text-sm">CULTURE 餘額</h3><p className="text-base md:text-xl font-bold">{parseFloat(cultureBalance).toFixed(4)}</p></div>
+                <div className="bg-white rounded-xl shadow-lg p-4"><h3 className="text-gray-500 text-sm">基礎價格</h3><p className="text-base md:text-xl font-bold">{parseFloat(currentPrice).toFixed(6)} USDT</p></div>
+                <div className="bg-white rounded-xl shadow-lg p-4"><h3 className="text-gray-500 text-sm">市場價格</h3><p className="text-base md:text-xl font-bold">{marketPrice !== '0' ? parseFloat(marketPrice).toFixed(6) : '--'} USDT</p></div>
               </div>
             )}
 
             {featureConfig.features.showMinted && (
               <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
-                <div className="flex justify-between items-center"><h2 className="text-xl font-semibold">福缘进度</h2><div className="text-sm text-gray-500">总福缘: 0 / 21,000,000</div></div>
+                <div className="flex justify-between items-center"><h2 className="text-xl font-semibold">挖礦進度</h2><div className="text-sm text-gray-500">總已挖出: 0 / 21,000,000 CULTURE</div></div>
               </div>
             )}
 
             <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
               <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold">福令</h2>
+                <h2 className="text-xl font-semibold">我的邀請碼</h2>
                 {!myInviteCode ? (
-                  <button onClick={handleGenerateInviteCode} disabled={inviteLoading} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm">{inviteLoading ? '请福中...' : '请福令'}</button>
+                  <button onClick={handleGenerateInviteCode} disabled={inviteLoading} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm">{inviteLoading ? '處理中...' : '生成邀請碼'}</button>
                 ) : (
                   <div className="flex items-center space-x-2">
                     <span className="font-mono text-lg font-bold text-blue-600">{myInviteCode}</span>
-                    <button onClick={copyInviteLink} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 transition text-sm">持令</button>
+                    <button onClick={copyInviteLink} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 transition text-sm">複製邀請鏈接</button>
                   </div>
                 )}
               </div>
-              <div className="mt-3 text-center text-xs text-gray-400">天官赐福 · 福缘灵境 · www.culture2006.com</div>
+              <div className="mt-3 text-center text-xs text-gray-400">文化挖礦 · www.culture2006.com</div>
             </div>
 
             <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">显福</h2>
+                <h2 className="text-xl font-semibold">我的帳戶</h2>
                 {featureConfig.features.showReferral && (
                   <button onClick={() => { setSelectedUser(currentAccount); setShowTeamView(true); }} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm flex items-center">
-                    👥 福缘谱
+                    👥 我的團隊
                   </button>
                 )}
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div><p className="text-gray-500 text-xs">福本</p><p className="text-base font-medium">{parseFloat(userInfo.depositBase).toFixed(4)}</p></div>
-                <div><p className="text-gray-500 text-xs">现福</p><p className="text-base font-medium">{parseFloat(userInfo.remainingDeposit).toFixed(4)}</p></div>
-                <div><p className="text-gray-500 text-xs">待赐福</p><p className="text-base font-medium text-green-600">{parseFloat(pendingReward).toFixed(4)}</p></div>
-                <div><p className="text-gray-500 text-xs">累福</p><p className="text-base font-medium">{parseFloat(userInfo.totalRewarded).toFixed(4)}</p></div>
+                <div><p className="text-gray-500 text-xs">存款基礎</p><p className="text-base font-medium">{parseFloat(userInfo.depositBase).toFixed(4)}</p></div>
+                <div><p className="text-gray-500 text-xs">可提取</p><p className="text-base font-medium">{parseFloat(userInfo.remainingDeposit).toFixed(4)}</p></div>
+                <div><p className="text-gray-500 text-xs">待領取</p><p className="text-base font-medium text-green-600">{parseFloat(pendingReward).toFixed(4)}</p></div>
+                <div><p className="text-gray-500 text-xs">累計獲得</p><p className="text-base font-medium">{parseFloat(userInfo.totalRewarded).toFixed(4)}</p></div>
               </div>
               {parseFloat(pendingReward) > 0 && featureConfig.features.claim && (
-                <div className="mt-4 flex justify-end"><button onClick={handleClaim} disabled={claimLoading || isButtonDisabled('claim')} className="px-6 py-2 bg-green-600 text-white rounded-lg text-sm">{featureConfig.globalMaintenance ? '闭福中' : claimLoading ? '领福中...' : '领福'}</button></div>
+                <div className="mt-4 flex justify-end"><button onClick={handleClaim} disabled={claimLoading || isButtonDisabled('claim')} className="px-6 py-2 bg-green-600 text-white rounded-lg text-sm">{featureConfig.globalMaintenance ? '維護中' : claimLoading ? '處理中...' : '領取獎勵'}</button></div>
               )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-              <div className="bg-white rounded-xl shadow-lg p-4 md:p-6"><h3 className="text-lg font-semibold mb-4">纳福</h3><input type="number" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} placeholder="输入数量" className="w-full p-3 border rounded-lg mb-4 text-sm" /><button onClick={handleDeposit} disabled={depositLoading || isButtonDisabled('deposit')} className="w-full py-3 bg-blue-600 text-white rounded-lg text-sm">{featureConfig.globalMaintenance ? '闭福中' : depositLoading ? '纳福中...' : '纳福'}</button></div>
-              <div className="bg-white rounded-xl shadow-lg p-4 md:p-6"><h3 className="text-lg font-semibold mb-4">得福</h3><input type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="输入数量" className="w-full p-3 border rounded-lg mb-4 text-sm" /><button onClick={handleWithdraw} disabled={withdrawLoading || isButtonDisabled('withdraw')} className="w-full py-3 bg-yellow-600 text-white rounded-lg text-sm">{featureConfig.globalMaintenance ? '闭福中' : withdrawLoading ? '得福中...' : '得福'}</button></div>
+              <div className="bg-white rounded-xl shadow-lg p-4 md:p-6"><h3 className="text-lg font-semibold mb-4">存入 USDT</h3><input type="number" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} placeholder="輸入數量" className="w-full p-3 border rounded-lg mb-4 text-sm" /><button onClick={handleDeposit} disabled={depositLoading || isButtonDisabled('deposit')} className="w-full py-3 bg-blue-600 text-white rounded-lg text-sm">{featureConfig.globalMaintenance ? '維護中' : depositLoading ? '處理中...' : '存入'}</button></div>
+              <div className="bg-white rounded-xl shadow-lg p-4 md:p-6"><h3 className="text-lg font-semibold mb-4">提取 USDT</h3><input type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="輸入數量" className="w-full p-3 border rounded-lg mb-4 text-sm" /><button onClick={handleWithdraw} disabled={withdrawLoading || isButtonDisabled('withdraw')} className="w-full py-3 bg-yellow-600 text-white rounded-lg text-sm">{featureConfig.globalMaintenance ? '維護中' : withdrawLoading ? '處理中...' : '提取'}</button></div>
             </div>
 
             <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mt-4 md:mt-6">
-              <h3 className="text-lg font-semibold mb-4">结福缘（需支付0.001 BNB）</h3>
+              <h3 className="text-lg font-semibold mb-4">綁定下線（需支付0.001 BNB）</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input type="text" value={bindAddress} onChange={(e) => setBindAddress(e.target.value)} placeholder="输入福址" className="p-3 border rounded-lg text-sm" />
-                <button onClick={handleBind} disabled={bindLoading || isButtonDisabled('bind')} className="px-8 py-3 bg-purple-600 text-white rounded-lg text-sm">{featureConfig.globalMaintenance ? '闭福中' : bindLoading ? '结缘中...' : '结福缘'}</button>
+                <input type="text" value={bindAddress} onChange={(e) => setBindAddress(e.target.value)} placeholder="輸入下線錢包地址" className="p-3 border rounded-lg text-sm" />
+                <button onClick={handleBind} disabled={bindLoading || isButtonDisabled('bind')} className="px-8 py-3 bg-purple-600 text-white rounded-lg text-sm">{featureConfig.globalMaintenance ? '維護中' : bindLoading ? '處理中...' : '綁定'}</button>
               </div>
             </div>
           </>
@@ -590,12 +590,12 @@ function App() {
         {showInviteModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
-              <h2 className="text-2xl font-bold mb-2">结福缘</h2>
-              <p className="text-gray-600 mb-4">输入福令，共结福缘</p>
-              <input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="请输入8位福令" className="w-full p-3 border rounded-lg mb-4 text-lg" readOnly={inviteCode && window.location.search.includes('ref')} />
+              <h2 className="text-2xl font-bold mb-2">輸入邀請碼</h2>
+              <p className="text-gray-600 mb-4">輸入好友的邀請碼，雙方都可獲得獎勵（可跳過）</p>
+              <input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="請輸入8位邀請碼" className="w-full p-3 border rounded-lg mb-4 text-lg" readOnly={inviteCode && window.location.search.includes('ref')} />
               <div className="flex flex-col gap-3">
-                <button onClick={handleRegisterWithInvite} disabled={inviteLoading || !inviteCode} className="py-3 bg-blue-600 text-white rounded-lg">结缘</button>
-                <button onClick={handleSkipInvite} className="py-3 bg-gray-500 text-white rounded-lg">暂结</button>
+                <button onClick={handleRegisterWithInvite} disabled={inviteLoading || !inviteCode} className="py-3 bg-blue-600 text-white rounded-lg">提交</button>
+                <button onClick={handleSkipInvite} className="py-3 bg-gray-500 text-white rounded-lg">跳過</button>
               </div>
             </div>
           </div>
