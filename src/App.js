@@ -73,7 +73,7 @@ function App() {
     if (!library) return null;
     const signer = library.getSigner();
     const contract = new ethers.Contract(MINING_CONTRACT_ADDRESS, MiningABI, signer);
-    window.miningContract = contract;
+    window.miningContract = contract; // 挂载到全局
     return contract;
   }, [library]);
 
@@ -117,12 +117,17 @@ function App() {
     checkIsPool();
   }, [currentAccount, miningContract]);
 
-  // 稳定版 loadUserData（借鉴 smapro）
+  // ================= 核心数据加载函数（带详细日志） =================
   const loadUserData = useCallback(async () => {
     const addr = account || manualAccount;
-    if (!addr || !miningContract) return;
+    console.log('[loadUserData] 被调用, 当前账户:', addr);
+    if (!addr || !miningContract) {
+      console.warn('[loadUserData] 账户或合约未就绪');
+      return;
+    }
     try {
       const info = await miningContract.users(addr);
+      console.log('[loadUserData] 链上原始信息:', info);
       const depositBase = info.depositBase !== undefined ? info.depositBase : (info[0] || 0);
       const remainingDeposit = info.remainingDeposit !== undefined ? info.remainingDeposit : (info[1] || 0);
       const pendingRewardVal = info.pendingReward !== undefined ? info.pendingReward : (info[3] || 0);
@@ -130,14 +135,16 @@ function App() {
       const cumulativeWithdrawn = info.cumulativeWithdrawn !== undefined ? info.cumulativeWithdrawn : (info[5] || 0);
       const totalRewardedVal = info.totalRewarded !== undefined ? info.totalRewarded : (info[6] || 0);
 
-      setUserInfo({
+      const newUserInfo = {
         depositBase: ethers.utils.formatEther(depositBase),
         remainingDeposit: ethers.utils.formatEther(remainingDeposit),
         pendingReward: ethers.utils.formatEther(pendingRewardVal),
         cumulativeDeposited: ethers.utils.formatEther(cumulativeDeposited),
         cumulativeWithdrawn: ethers.utils.formatEther(cumulativeWithdrawn),
         totalRewarded: ethers.utils.formatEther(totalRewardedVal),
-      });
+      };
+      console.log('[loadUserData] 将要设置的新 userInfo:', newUserInfo);
+      setUserInfo(newUserInfo);
 
       const reward = await miningContract.pendingReward(addr);
       setPendingReward(ethers.utils.formatEther(reward));
@@ -171,7 +178,7 @@ function App() {
         } catch (e) {}
       }
     } catch (error) {
-      console.error('loadUserData 失败:', error);
+      console.error('[loadUserData] 失败:', error);
     }
   }, [account, manualAccount, miningContract, myInviteCode]);
 
@@ -242,7 +249,18 @@ function App() {
     }
   }, [account, manualAccount, miningContract, loadUserData, loadBalances]);
 
-  // ========== 连接钱包函数 ==========
+  // ================= 全局调试函数 =================
+  useEffect(() => {
+    window.debugLoadUserData = async () => {
+      console.log('[debug] 手动触发 loadUserData');
+      await loadUserData();
+      console.log('[debug] loadUserData 执行完成');
+    };
+    window.debugMiningContract = miningContract;
+    window.debugGetUserInfo = () => userInfo;
+  }, [loadUserData, miningContract, userInfo]);
+
+  // ================= 钱包连接函数 =================
   const connectWallet = async (connector) => {
     try {
       if (window.ethereum) {
@@ -262,7 +280,7 @@ function App() {
     deactivate();
   };
 
-  // ========== 其他功能函数 ==========
+  // ================= 其他业务函数 =================
   const copyToClipboard = async (text) => {
     const textStr = String(text);
     try {
@@ -499,7 +517,10 @@ function App() {
             <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold">我的帳戶</h2>
-                {featureConfig.features.showReferral && <button onClick={() => { setSelectedUser(currentAccount); setShowTeamView(true); }} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm flex items-center">👥 我的團隊</button>}
+                <div className="flex gap-2">
+                  <button onClick={() => { loadUserData(); loadBalances(); }} className="px-3 py-1 bg-blue-500 text-white rounded-lg text-sm">🔄 強制刷新</button>
+                  {featureConfig.features.showReferral && <button onClick={() => { setSelectedUser(currentAccount); setShowTeamView(true); }} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm flex items-center">👥 我的團隊</button>}
+                </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div><p className="text-gray-500 text-xs">存款基礎</p><p className="text-base font-medium">{parseFloat(userInfo.depositBase).toFixed(4)}</p></div>
