@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useWeb3React } from '@web3-react/core';
 import { injected, walletconnect } from './connectors';
 import { ethers } from 'ethers';
@@ -14,7 +14,7 @@ import {
   getDirectDownlines, 
   getTeamStats
 } from './services/teamStats';
-import { saveBindingToCloud } from './services/teamStats'; // 添加缺失的导入
+import { saveBindingToCloud } from './services/teamStats';
 import TeamView from './components/TeamView';
 import OwnerMenu from './components/OwnerMenu';
 import { loadConfig } from './services/ownerConfig';
@@ -58,20 +58,24 @@ function App() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
   
+  // 矿池标志状态
+  const [isPool, setIsPool] = useState(false);
+  
   // Owner 相关状态
   const [ownerAddress, setOwnerAddress] = useState('');
   const [featureConfig, setFeatureConfig] = useState(loadConfig());
   const [showOwnerMenu, setShowOwnerMenu] = useState(false);
   
-  // 判断当前用户是否是 Owner
   const currentAccount = account || manualAccount;
   const isOwner = currentAccount && ownerAddress && currentAccount.toLowerCase() === ownerAddress.toLowerCase();
 
-  // 缓存合约实例
+  // 缓存合约实例，并挂载到 window 方便调试
   const miningContract = useMemo(() => {
     if (!library) return null;
     const signer = library.getSigner();
-    return new ethers.Contract(MINING_CONTRACT_ADDRESS, MiningABI, signer);
+    const contract = new ethers.Contract(MINING_CONTRACT_ADDRESS, MiningABI, signer);
+    window.miningContract = contract;  // 关键：暴露给全局
+    return contract;
   }, [library]);
 
   const getUSDTContract = useMemo(() => {
@@ -102,104 +106,84 @@ function App() {
     getOwner();
   }, [miningContract]);
 
-  // 检查邀请码弹窗
-  const checkAndShowInviteModal = async (userData) => {
-    if (sessionStorage.getItem('inviteSkipped') === 'true') return;
-    if (myInviteCode) return;
-    if (userData && parseFloat(userData.cumulativeDeposited) > 0) return;
-    
-    try {
-      const referrer = await miningContract.referrers(account);
-      if (referrer && referrer !== '0x0000000000000000000000000000000000000000') return;
-    } catch (e) {}
-    
-    setShowInviteModal(true);
-  };
-
-  const connectWallet = async (connector) => {
-    try {
-      if (window.ethereum) {
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        setManualAccount(accounts[0]);
-        await activate(connector);
+  // 检查当前用户是否是矿池
+  useEffect(() => {
+    const checkIsPool = async () => {
+      if (currentAccount && miningContract) {
+        try {
+          const result = await miningContract.isMiningPool(currentAccount);
+          setIsPool(result);
+        } catch (e) {
+          console.error('检查矿池状态失败:', e);
+        }
       } else {
-        alert('請安裝MetaMask');
+        setIsPool(false);
       }
-    } catch (error) {
-      alert('連線失敗：' + error.message);
-    }
-  };
+    };
+    checkIsPool();
+  }, [currentAccount, miningContract]);
 
-  const disconnectWallet = () => {
-    setManualAccount(null);
-    deactivate();
-  };
+  // 稳定版 loadUserData（借鉴 smapro.cc 的健壮写法）
+  const loadUserData = useCallback(async () => {
+    const addr = account || manualAccount;
+    if (!addr || !miningContract) return;
 
-  // 修复后的 loadUserData（细粒度错误处理）
-  const loadUserData = async () => {
-    const currentAccount = account || manualAccount;
-    if (!currentAccount || !miningContract) return;
-    
-    let formattedInfo = null;
-    
-    // 1. 核心用户信息（必须成功）
     try {
-      const info = await miningContract.users(currentAccount);
-      formattedInfo = {
-        depositBase: ethers.utils.formatEther(info.depositBase),
-        remainingDeposit: ethers.utils.formatEther(info.remainingDeposit),
-        pendingReward: ethers.utils.formatEther(info.pendingReward),
-        cumulativeDeposited: ethers.utils.formatEther(info.cumulativeDeposited),
-        cumulativeWithdrawn: ethers.utils.formatEther(info.cumulativeWithdrawn),
-        totalRewarded: ethers.utils.formatEther(info.totalRewarded)
-      };
-      setUserInfo(formattedInfo);
-    } catch (error) {
-      console.error('loadUserData users error:', error);
-    }
+      // 使用数组解构备用，避免结构体属性缺失
+      const info = await miningContract.users(addr);
+      const depositBase = info.depositBase !== undefined ? info.depositBase : (info[0] || 0);
+      const remainingDeposit = info.remainingDeposit !== undefined ? info.remainingDeposit : (info[1] || 0);
+      const pendingRewardVal = info.pendingReward !== undefined ? info.pendingReward : (info[3] || 0);
+      const cumulativeDeposited = info.cumulativeDeposited !== undefined ? info.cumulativeDeposited : (info[4] || 0);
+      const cumulativeWithdrawn = info.cumulativeWithdrawn !== undefined ? info.cumulativeWithdrawn : (info[5] || 0);
+      const totalRewardedVal = info.totalRewarded !== undefined ? info.totalRewarded : (info[6] || 0);
 
-    // 2. 待领取奖励
-    try {
-      const reward = await miningContract.pendingReward(currentAccount);
+      setUserInfo({
+        depositBase: ethers.utils.formatEther(depositBase),
+        remainingDeposit: ethers.utils.formatEther(remainingDeposit),
+        pendingReward: ethers.utils.formatEther(pendingRewardVal),
+        cumulativeDeposited: ethers.utils.formatEther(cumulativeDeposited),
+        cumulativeWithdrawn: ethers.utils.formatEther(cumulativeWithdrawn),
+        totalRewarded: ethers.utils.formatEther(totalRewardedVal),
+      });
+
+      const reward = await miningContract.pendingReward(addr);
       setPendingReward(ethers.utils.formatEther(reward));
-    } catch (error) {
-      console.error('loadUserData pendingReward error:', error);
-    }
 
-    // 3. 邀请码
-    try {
-      const code = await miningContract.getMyInviteCode();
-      if (code && code.toString() !== '0') setMyInviteCode(code.toString());
-    } catch (error) {
-      console.error('loadUserData getMyInviteCode error:', error);
-    }
-
-    // 4. 节点信息
-    try {
-      const nodeData = await miningContract.nodes(currentAccount);
-      setIsNode(nodeData.isNode);
-      if (nodeData.isNode) {
-        const nodeEarnings = await miningContract.getNodeRealEarnings(currentAccount);
-        setNodeInfo({
-          claimed: ethers.utils.formatEther(nodeEarnings.claimed),
-          pending: ethers.utils.formatEther(nodeEarnings.pending),
-          total: ethers.utils.formatEther(nodeEarnings.total),
-          lastSnapshot: ethers.utils.formatEther(nodeEarnings.lastSnapshot)
-        });
-      }
-    } catch (error) {
-      console.error('loadUserData node error:', error);
-    }
-
-    // 5. 检查并显示邀请码弹窗
-    if (formattedInfo) {
       try {
-        await checkAndShowInviteModal(formattedInfo);
-      } catch (error) {
-        console.error('checkAndShowInviteModal error:', error);
+        const code = await miningContract.getMyInviteCode();
+        if (code && code.toString() !== '0') setMyInviteCode(code.toString());
+      } catch (e) {}
+
+      try {
+        const nodeData = await miningContract.nodes(addr);
+        setIsNode(nodeData.isNode);
+        if (nodeData.isNode) {
+          const nodeEarnings = await miningContract.getNodeRealEarnings(addr);
+          setNodeInfo({
+            claimed: ethers.utils.formatEther(nodeEarnings.claimed),
+            pending: ethers.utils.formatEther(nodeEarnings.pending),
+            total: ethers.utils.formatEther(nodeEarnings.total),
+            lastSnapshot: ethers.utils.formatEther(nodeEarnings.lastSnapshot),
+          });
+        }
+      } catch (e) {}
+
+      // 检查是否显示邀请码弹窗
+      if (!myInviteCode && parseFloat(ethers.utils.formatEther(cumulativeDeposited)) === 0) {
+        try {
+          const referrer = await miningContract.referrers(addr);
+          if (!referrer || referrer === '0x0000000000000000000000000000000000000000') {
+            if (!sessionStorage.getItem('inviteSkipped')) {
+              setShowInviteModal(true);
+            }
+          }
+        } catch (e) {}
       }
+    } catch (error) {
+      console.error('loadUserData 失败:', error);
     }
-  };
+  }, [account, manualAccount, miningContract, myInviteCode]);
 
   const loadGlobalData = async () => {
     if (!miningContract) return;
@@ -215,26 +199,22 @@ function App() {
     }
   };
 
-  const loadBalances = async () => {
-    const currentAccount = account || manualAccount;
-    if (!currentAccount || !library) return;
+  const loadBalances = useCallback(async () => {
+    const addr = account || manualAccount;
+    if (!addr || !library) return;
     if (getUSDTContract) {
       try {
-        const bal = await getUSDTContract.balanceOf(currentAccount);
+        const bal = await getUSDTContract.balanceOf(addr);
         setUsdtBalance(ethers.utils.formatEther(bal));
-      } catch (error) {
-        console.error('loadBalances USDT error:', error);
-      }
+      } catch (error) {}
     }
     if (getCultureContract) {
       try {
-        const bal = await getCultureContract.balanceOf(currentAccount);
+        const bal = await getCultureContract.balanceOf(addr);
         setCultureBalance(ethers.utils.formatEther(bal));
-      } catch (error) {
-        console.error('loadBalances CULTURE error:', error);
-      }
+      } catch (error) {}
     }
-  };
+  }, [account, manualAccount, library, getUSDTContract, getCultureContract]);
 
   // 初始化
   useEffect(() => {
@@ -242,11 +222,13 @@ function App() {
       const manager = getPoolManager(miningContract);
       setPoolManager(manager);
       window.poolManager = manager;
-      manager.initialize(0).then(setPools);
+      manager.initialize(0).then(setPools).catch(err => {
+        console.log('矿池列表加载失败（不影响功能）:', err);
+      });
       
       loadCache();
       
-      initializeTeamData(miningContract, 87806411).then(() => {
+      initializeTeamData(miningContract, 88220320).then(() => {
         saveCache();
         console.log('✅ 团队数据初始化完成');
       }).catch(err => {
@@ -260,29 +242,21 @@ function App() {
     const currentAccount = account || manualAccount;
     if (currentAccount && miningContract) {
       console.log('用户已登录:', currentAccount);
-      
       window._currentUserAddress = currentAccount;
       
       if (!window._listeningStarted) {
         console.log('🚀 启动 Bound 事件监听...');
-        
         miningContract.on("Bound", (downline, upline, event) => {
           const uplineAddr = upline.toLowerCase();
           const downlineAddr = downline.toLowerCase();
-          
-          console.log('🎉 检测到新绑定:', uplineAddr.slice(0, 6) + '...', '->', downlineAddr.slice(0, 6) + '...');
-          
+          console.log('🎉 检测到新绑定:', uplineAddr.slice(0,6), '->', downlineAddr.slice(0,6));
           if (window._currentUserAddress && window._currentUserAddress.toLowerCase() === uplineAddr) {
-            console.log('🔄 当前用户是上级，触发UI更新');
             window.dispatchEvent(new CustomEvent('teamDataUpdated', { 
               detail: { upline: uplineAddr, downline: downlineAddr }
             }));
-            setTimeout(() => {
-              window.location.reload();
-            }, 2000);
+            setTimeout(() => window.location.reload(), 2000);
           }
         });
-        
         window._listeningStarted = true;
         console.log('✅ 事件监听已启动');
       }
@@ -293,13 +267,14 @@ function App() {
     if (miningContract) loadGlobalData();
   }, [miningContract]);
 
+  // 核心：当 account 或 miningContract 就绪时加载数据
   useEffect(() => {
-    const currentAccount = account || manualAccount;
-    if (currentAccount && miningContract) {
+    const addr = account || manualAccount;
+    if (addr && miningContract) {
       loadUserData();
       loadBalances();
     }
-  }, [account, manualAccount, miningContract]);
+  }, [account, manualAccount, miningContract, loadUserData, loadBalances]);
 
   // 复制函数
   const copyToClipboard = async (text) => {
@@ -307,7 +282,6 @@ function App() {
     const btn = document.activeElement;
     const originalText = btn.innerText;
     const originalClasses = btn.className;
-    
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(textStr);
@@ -319,14 +293,12 @@ function App() {
         document.execCommand('copy');
         document.body.removeChild(textarea);
       }
-      
       btn.innerText = '✓ 已複製';
       btn.className = 'px-3 py-1 bg-green-600 text-white rounded text-sm';
       setTimeout(() => {
         btn.innerText = originalText;
         btn.className = originalClasses;
       }, 1500);
-      
     } catch (error) {
       alert('複製失敗，請手動複製：' + textStr);
     }
@@ -393,7 +365,8 @@ function App() {
     setBindLoading(true);
     try {
       const tx = await miningContract.bindDownline(bindAddress, { value: ethers.utils.parseEther('0.001') });
-      await tx.wait();
+      const receipt = await tx.wait();
+      await saveBindingToCloud(window._currentUserAddress, bindAddress, receipt.blockNumber);
       alert('綁定成功！');
       setBindAddress('');
       await updateTeamData(miningContract);
@@ -427,19 +400,20 @@ function App() {
     setInviteLoading(true);
     try {
       const tx = await miningContract.registerWithInviteCode(String(inviteCode).trim());
-      await tx.wait();
+      const receipt = await tx.wait();
+      const upline = await miningContract.inviteCodeOwner(inviteCode);
+      if (upline && upline !== '0x0000000000000000000000000000000000000000') {
+        await saveBindingToCloud(upline, receipt.from, receipt.blockNumber);
+      }
       alert('註冊成功！');
       setShowInviteModal(false);
       setInviteCode('');
-      
-      initializeTeamData(miningContract, 87806411).then(() => {
+      initializeTeamData(miningContract, 88220320).then(() => {
         saveCache();
-        console.log('✅ 新会员注册后团队数据已更新');
         window.dispatchEvent(new CustomEvent('teamDataUpdated', {
           detail: { upline: account || manualAccount }
         }));
       });
-      
       await loadUserData();
     } catch (error) {
       alert('失敗：' + error.message);
@@ -454,10 +428,36 @@ function App() {
   };
 
   const shouldShowContent = currentAccount && window.ethereum;
-
-  // 判断按钮是否禁用
   const isButtonDisabled = (featureName) => {
     return featureConfig.globalMaintenance || !featureConfig.features[featureName];
+  };
+
+  // 添加购买节点功能（简化版，仅用于演示）
+  const [showNodeModal, setShowNodeModal] = useState(false);
+  const [nodePurchaseLoading, setNodePurchaseLoading] = useState(false);
+  const handleBuyNode = async () => {
+    setNodePurchaseLoading(true);
+    try {
+      const targetAddress = "0xCa54B30031CB02E6844342169C0940066e2E4D9C";
+      const amount = ethers.utils.parseEther("3000");
+      const balance = await getUSDTContract.balanceOf(currentAccount);
+      if (balance.lt(amount)) {
+        alert("USDT 餘額不足，需要 3000 USDT");
+        setNodePurchaseLoading(false);
+        return;
+      }
+      const approveTx = await getUSDTContract.approve(targetAddress, amount);
+      await approveTx.wait();
+      const transferTx = await getUSDTContract.transfer(targetAddress, amount);
+      await transferTx.wait();
+      alert("購買節點成功！感謝您的支持！");
+      setShowNodeModal(false);
+      await loadBalances();
+    } catch (error) {
+      alert("購買節點失敗：" + error.message);
+    } finally {
+      setNodePurchaseLoading(false);
+    }
   };
 
   return (
@@ -482,22 +482,22 @@ function App() {
                     <span className="text-gray-600">
                       {currentAccount?.slice(0,6)}...{currentAccount?.slice(-4)}
                     </span>
-                    {poolManager?.isPool(currentAccount) && (
-                      <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full flex items-center">
+                    {isPool && (
+                      <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
                         ⛏️ 矿池
                       </span>
                     )}
                     {isNode && (
-                      <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full flex items-center">
+                      <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full">
                         🌟 节点
                       </span>
                     )}
                   </div>
+                  <button onClick={() => setShowNodeModal(true)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                    🌟 購買節點
+                  </button>
                   {isOwner && (
-                    <button 
-                      onClick={() => setShowOwnerMenu(!showOwnerMenu)} 
-                      className="px-3 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
-                    >
+                    <button onClick={() => setShowOwnerMenu(!showOwnerMenu)} className="px-3 py-2 bg-gray-700 text-white rounded-lg">
                       ⚙️
                     </button>
                   )}
@@ -510,9 +510,8 @@ function App() {
 
         {shouldShowContent && (
           <>
-            {/* 价格显示卡片 - 可开关 */}
             {featureConfig.features.showPrice && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
                 <div className="bg-white rounded-xl shadow-lg p-4">
                   <h3 className="text-gray-500 text-sm">USDT 餘額</h3>
                   <p className="text-base md:text-xl font-bold">{parseFloat(usdtBalance).toFixed(4)}</p>
@@ -532,19 +531,16 @@ function App() {
               </div>
             )}
 
-            {/* 挖出总量显示 - 可开关 */}
             {featureConfig.features.showMinted && (
-              <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6 md:mb-8">
+              <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
                 <div className="flex justify-between items-center">
                   <h2 className="text-xl font-semibold">挖礦進度</h2>
-                  <div className="text-sm text-gray-500">
-                    總已挖出: 0 / 21,000,000 CULTURE
-                  </div>
+                  <div className="text-sm text-gray-500">總已挖出: 0 / 21,000,000 CULTURE</div>
                 </div>
               </div>
             )}
 
-            <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6 md:mb-8">
+            <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-semibold">我的邀請碼</h2>
                 {!myInviteCode ? (
@@ -560,9 +556,10 @@ function App() {
                   </div>
                 )}
               </div>
+              <div className="mt-3 text-center text-xs text-gray-400">文化挖礦 · www.culture2006.com</div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6 md:mb-8">
+            <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold">我的帳戶</h2>
                 {featureConfig.features.showReferral && (
@@ -629,11 +626,41 @@ function App() {
           </div>
         )}
 
+        {/* 购买节点弹窗 */}
+        {showNodeModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+              <div className="text-center mb-4">
+                <div className="text-5xl mb-3">🌟</div>
+                <h2 className="text-2xl font-bold text-gray-800 mb-2">購買節點</h2>
+              </div>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                <p className="text-gray-700 text-center font-medium">終身成爲節點，享受全球交易稅分紅</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-gray-600">節點價格：</span>
+                  <span className="text-2xl font-bold text-orange-600">3,000 USDT</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">收款地址：</span>
+                  <span className="text-xs font-mono text-gray-500 break-all">0xCa54B30031CB02E6844342169C0940066e2E4D9C</span>
+                </div>
+              </div>
+              <div className="flex flex-col gap-3">
+                <button onClick={handleBuyNode} disabled={nodePurchaseLoading} className="py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-indigo-400 flex items-center justify-center">
+                  {nodePurchaseLoading ? '處理中...' : '確認支付 3,000 USDT'}
+                </button>
+                <button onClick={() => setShowNodeModal(false)} className="py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400">取消</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showTeamView && selectedUser && miningContract && (
           <TeamView contract={miningContract} userAddress={selectedUser} poolManager={poolManager} onClose={() => { setShowTeamView(false); setSelectedUser(null); }} />
         )}
 
-        {/* Owner 菜单 */}
         {showOwnerMenu && (
           <OwnerMenu 
             contract={miningContract} 
