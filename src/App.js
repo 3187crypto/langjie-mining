@@ -14,6 +14,7 @@ import {
   getDirectDownlines, 
   getTeamStats
 } from './services/teamStats';
+import { saveBindingToCloud } from './services/teamStats'; // 添加缺失的导入
 import TeamView from './components/TeamView';
 import OwnerMenu from './components/OwnerMenu';
 import { loadConfig } from './services/ownerConfig';
@@ -134,12 +135,17 @@ function App() {
     deactivate();
   };
 
+  // 修复后的 loadUserData（细粒度错误处理）
   const loadUserData = async () => {
     const currentAccount = account || manualAccount;
     if (!currentAccount || !miningContract) return;
+    
+    let formattedInfo = null;
+    
+    // 1. 核心用户信息（必须成功）
     try {
       const info = await miningContract.users(currentAccount);
-      const formattedInfo = {
+      formattedInfo = {
         depositBase: ethers.utils.formatEther(info.depositBase),
         remainingDeposit: ethers.utils.formatEther(info.remainingDeposit),
         pendingReward: ethers.utils.formatEther(info.pendingReward),
@@ -148,33 +154,50 @@ function App() {
         totalRewarded: ethers.utils.formatEther(info.totalRewarded)
       };
       setUserInfo(formattedInfo);
+    } catch (error) {
+      console.error('loadUserData users error:', error);
+    }
 
+    // 2. 待领取奖励
+    try {
       const reward = await miningContract.pendingReward(currentAccount);
       setPendingReward(ethers.utils.formatEther(reward));
-
-      try {
-        const code = await miningContract.getMyInviteCode();
-        if (code && code.toString() !== '0') setMyInviteCode(code.toString());
-      } catch (e) {}
-
-      try {
-        const nodeData = await miningContract.nodes(currentAccount);
-        setIsNode(nodeData.isNode);
-        if (nodeData.isNode) {
-          const nodeEarnings = await miningContract.getNodeRealEarnings(currentAccount);
-          setNodeInfo({
-            claimed: ethers.utils.formatEther(nodeEarnings.claimed),
-            pending: ethers.utils.formatEther(nodeEarnings.pending),
-            total: ethers.utils.formatEther(nodeEarnings.total),
-            lastSnapshot: ethers.utils.formatEther(nodeEarnings.lastSnapshot)
-          });
-        }
-      } catch (e) {}
-      
-      await checkAndShowInviteModal(formattedInfo);
-      
     } catch (error) {
-      console.error(error);
+      console.error('loadUserData pendingReward error:', error);
+    }
+
+    // 3. 邀请码
+    try {
+      const code = await miningContract.getMyInviteCode();
+      if (code && code.toString() !== '0') setMyInviteCode(code.toString());
+    } catch (error) {
+      console.error('loadUserData getMyInviteCode error:', error);
+    }
+
+    // 4. 节点信息
+    try {
+      const nodeData = await miningContract.nodes(currentAccount);
+      setIsNode(nodeData.isNode);
+      if (nodeData.isNode) {
+        const nodeEarnings = await miningContract.getNodeRealEarnings(currentAccount);
+        setNodeInfo({
+          claimed: ethers.utils.formatEther(nodeEarnings.claimed),
+          pending: ethers.utils.formatEther(nodeEarnings.pending),
+          total: ethers.utils.formatEther(nodeEarnings.total),
+          lastSnapshot: ethers.utils.formatEther(nodeEarnings.lastSnapshot)
+        });
+      }
+    } catch (error) {
+      console.error('loadUserData node error:', error);
+    }
+
+    // 5. 检查并显示邀请码弹窗
+    if (formattedInfo) {
+      try {
+        await checkAndShowInviteModal(formattedInfo);
+      } catch (error) {
+        console.error('checkAndShowInviteModal error:', error);
+      }
     }
   };
 
@@ -199,13 +222,17 @@ function App() {
       try {
         const bal = await getUSDTContract.balanceOf(currentAccount);
         setUsdtBalance(ethers.utils.formatEther(bal));
-      } catch (error) {}
+      } catch (error) {
+        console.error('loadBalances USDT error:', error);
+      }
     }
     if (getCultureContract) {
       try {
         const bal = await getCultureContract.balanceOf(currentAccount);
         setCultureBalance(ethers.utils.formatEther(bal));
-      } catch (error) {}
+      } catch (error) {
+        console.error('loadBalances CULTURE error:', error);
+      }
     }
   };
 
@@ -214,7 +241,7 @@ function App() {
     if (miningContract) {
       const manager = getPoolManager(miningContract);
       setPoolManager(manager);
-      window.poolManager = manager;  // 暴露到全局
+      window.poolManager = manager;
       manager.initialize(0).then(setPools);
       
       loadCache();
@@ -315,8 +342,8 @@ function App() {
       const tx = await miningContract.deposit(amount);
       await tx.wait();
       alert('存款成功！');
-      loadUserData();
-      loadBalances();
+      await loadUserData();
+      await loadBalances();
       setDepositAmount('');
     } catch (error) {
       alert('失敗：' + error.message);
@@ -333,8 +360,8 @@ function App() {
       const tx = await miningContract.withdraw(amount);
       await tx.wait();
       alert('提款成功！');
-      loadUserData();
-      loadBalances();
+      await loadUserData();
+      await loadBalances();
       setWithdrawAmount('');
     } catch (error) {
       alert('失敗：' + error.message);
@@ -349,8 +376,8 @@ function App() {
       const tx = await miningContract.claimReward();
       await tx.wait();
       alert('領取成功！');
-      loadUserData();
-      loadBalances();
+      await loadUserData();
+      await loadBalances();
     } catch (error) {
       alert('失敗：' + error.message);
     } finally {
@@ -371,7 +398,7 @@ function App() {
       setBindAddress('');
       await updateTeamData(miningContract);
       saveCache();
-      loadUserData();
+      await loadUserData();
     } catch (error) {
       alert('失敗：' + error.message);
     } finally {
@@ -387,7 +414,7 @@ function App() {
       const event = receipt.events.find(e => e.event === 'InviteCodeGenerated');
       if (event) setMyInviteCode(event.args.inviteCode.toString());
       alert('邀請碼生成成功！');
-      loadUserData();
+      await loadUserData();
     } catch (error) {
       alert('失敗：' + error.message);
     } finally {
@@ -413,7 +440,7 @@ function App() {
         }));
       });
       
-      loadUserData();
+      await loadUserData();
     } catch (error) {
       alert('失敗：' + error.message);
     } finally {
@@ -455,13 +482,11 @@ function App() {
                     <span className="text-gray-600">
                       {currentAccount?.slice(0,6)}...{currentAccount?.slice(-4)}
                     </span>
-                    {/* 矿池标志 */}
                     {poolManager?.isPool(currentAccount) && (
                       <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full flex items-center">
                         ⛏️ 矿池
                       </span>
                     )}
-                    {/* 节点标志 */}
                     {isNode && (
                       <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full flex items-center">
                         🌟 节点
