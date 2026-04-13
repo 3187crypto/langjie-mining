@@ -32,11 +32,18 @@ async function saveBindingToCloud(upline, downline, blockNumber) {
 // 从云端获取所有团队数据
 async function getAllTeamsFromCloud() {
   try {
-    const { data, error } = await supabase.from('teams').select('*');
-    if (error) {
-      console.warn('云端获取失败:', error);
+    const response = await fetch('https://azlhhydeidaeihtewcgt.supabase.co/rest/v1/teams?select=*', {
+      headers: {
+        'apikey': 'sb_publishable_oQX-Egpajfzhwcm6QULEIw_5gLuR3k-',
+        'Content-Type': 'application/json'
+      }
+    });
+    if (!response.ok) {
+      console.warn('云端获取失败 HTTP:', response.status);
       return [];
     }
+    const data = await response.json();
+    console.log('云端获取到数据条数:', data.length);
     return data;
   } catch (e) {
     console.warn('云端获取异常:', e);
