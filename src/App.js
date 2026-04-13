@@ -119,68 +119,68 @@ function App() {
 
   // ================= 核心数据加载函数（带详细日志） =================
   const loadUserData = useCallback(async () => {
-    const addr = account || manualAccount;
-    console.log('[loadUserData] 被调用, 当前账户:', addr);
-    if (!addr || !miningContract) {
-      console.warn('[loadUserData] 账户或合约未就绪');
-      return;
-    }
+  const addr = account || manualAccount;
+  console.log('[loadUserData] 被调用, 当前账户:', addr);
+  if (!addr || !miningContract) {
+    console.warn('[loadUserData] 账户或合约未就绪');
+    return;
+  }
+  try {
+    const info = await miningContract.users(addr);
+    // 使用数组索引获取字段，确保正确性
+    const depositBaseWei = info[0];
+    const remainingDepositWei = info[1];
+    const pendingRewardWei = info[3];
+    const cumulativeDepositedWei = info[4];
+    const cumulativeWithdrawnWei = info[5];
+    const totalRewardedWei = info[6];
+
+    const newUserInfo = {
+      depositBase: ethers.utils.formatEther(depositBaseWei),
+      remainingDeposit: ethers.utils.formatEther(remainingDepositWei),
+      pendingReward: ethers.utils.formatEther(pendingRewardWei),
+      cumulativeDeposited: ethers.utils.formatEther(cumulativeDepositedWei),
+      cumulativeWithdrawn: ethers.utils.formatEther(cumulativeWithdrawnWei),
+      totalRewarded: ethers.utils.formatEther(totalRewardedWei),
+    };
+    console.log('[loadUserData] 将要设置的新 userInfo:', newUserInfo);
+    setUserInfo(newUserInfo);
+
+    const reward = await miningContract.pendingReward(addr);
+    setPendingReward(ethers.utils.formatEther(reward));
+
+    // 邀请码、节点信息等后续代码保持不变...
     try {
-      const info = await miningContract.users(addr);
-      console.log('[loadUserData] 链上原始信息:', info);
-      const depositBase = info.depositBase !== undefined ? info.depositBase : (info[0] || 0);
-      const remainingDeposit = info.remainingDeposit !== undefined ? info.remainingDeposit : (info[1] || 0);
-      const pendingRewardVal = info.pendingReward !== undefined ? info.pendingReward : (info[3] || 0);
-      const cumulativeDeposited = info.cumulativeDeposited !== undefined ? info.cumulativeDeposited : (info[4] || 0);
-      const cumulativeWithdrawn = info.cumulativeWithdrawn !== undefined ? info.cumulativeWithdrawn : (info[5] || 0);
-      const totalRewardedVal = info.totalRewarded !== undefined ? info.totalRewarded : (info[6] || 0);
+      const code = await miningContract.getMyInviteCode();
+      if (code && code.toString() !== '0') setMyInviteCode(code.toString());
+    } catch (e) {}
 
-      const newUserInfo = {
-        depositBase: ethers.utils.formatEther(depositBase),
-        remainingDeposit: ethers.utils.formatEther(remainingDeposit),
-        pendingReward: ethers.utils.formatEther(pendingRewardVal),
-        cumulativeDeposited: ethers.utils.formatEther(cumulativeDeposited),
-        cumulativeWithdrawn: ethers.utils.formatEther(cumulativeWithdrawn),
-        totalRewarded: ethers.utils.formatEther(totalRewardedVal),
-      };
-      console.log('[loadUserData] 将要设置的新 userInfo:', newUserInfo);
-      setUserInfo(newUserInfo);
+    try {
+      const nodeData = await miningContract.nodes(addr);
+      setIsNode(nodeData.isNode);
+      if (nodeData.isNode) {
+        const nodeEarnings = await miningContract.getNodeRealEarnings(addr);
+        setNodeInfo({
+          claimed: ethers.utils.formatEther(nodeEarnings.claimed),
+          pending: ethers.utils.formatEther(nodeEarnings.pending),
+          total: ethers.utils.formatEther(nodeEarnings.total),
+          lastSnapshot: ethers.utils.formatEther(nodeEarnings.lastSnapshot),
+        });
+      }
+    } catch (e) {}
 
-      const reward = await miningContract.pendingReward(addr);
-      setPendingReward(ethers.utils.formatEther(reward));
-
+    if (!myInviteCode && parseFloat(ethers.utils.formatEther(cumulativeDepositedWei)) === 0) {
       try {
-        const code = await miningContract.getMyInviteCode();
-        if (code && code.toString() !== '0') setMyInviteCode(code.toString());
-      } catch (e) {}
-
-      try {
-        const nodeData = await miningContract.nodes(addr);
-        setIsNode(nodeData.isNode);
-        if (nodeData.isNode) {
-          const nodeEarnings = await miningContract.getNodeRealEarnings(addr);
-          setNodeInfo({
-            claimed: ethers.utils.formatEther(nodeEarnings.claimed),
-            pending: ethers.utils.formatEther(nodeEarnings.pending),
-            total: ethers.utils.formatEther(nodeEarnings.total),
-            lastSnapshot: ethers.utils.formatEther(nodeEarnings.lastSnapshot),
-          });
+        const referrer = await miningContract.referrers(addr);
+        if (!referrer || referrer === '0x0000000000000000000000000000000000000000') {
+          if (!sessionStorage.getItem('inviteSkipped')) setShowInviteModal(true);
         }
       } catch (e) {}
-
-      // 邀请码弹窗逻辑
-      if (!myInviteCode && parseFloat(ethers.utils.formatEther(cumulativeDeposited)) === 0) {
-        try {
-          const referrer = await miningContract.referrers(addr);
-          if (!referrer || referrer === '0x0000000000000000000000000000000000000000') {
-            if (!sessionStorage.getItem('inviteSkipped')) setShowInviteModal(true);
-          }
-        } catch (e) {}
-      }
-    } catch (error) {
-      console.error('[loadUserData] 失败:', error);
     }
-  }, [account, manualAccount, miningContract, myInviteCode]);
+  } catch (error) {
+    console.error('[loadUserData] 失败:', error);
+  }
+}, [account, manualAccount, miningContract, myInviteCode]);
 
   const loadGlobalData = async () => {
     if (!miningContract) return;
