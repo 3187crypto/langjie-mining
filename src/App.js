@@ -68,12 +68,12 @@ function App() {
   const currentAccount = account || manualAccount;
   const isOwner = currentAccount && ownerAddress && currentAccount.toLowerCase() === ownerAddress.toLowerCase();
 
-  // 合约实例
+  // 合约实例（使用正确的地址，已在 addresses.js 中配置）
   const miningContract = useMemo(() => {
     if (!library) return null;
     const signer = library.getSigner();
     const contract = new ethers.Contract(MINING_CONTRACT_ADDRESS, MiningABI, signer);
-    window.miningContract = contract; // 挂载到全局
+    window.miningContract = contract;
     return contract;
   }, [library]);
 
@@ -117,70 +117,65 @@ function App() {
     checkIsPool();
   }, [currentAccount, miningContract]);
 
-  // ================= 核心数据加载函数（带详细日志） =================
+  // ========== 核心数据加载（强制使用数组索引，确保正确读取 depositBase）==========
   const loadUserData = useCallback(async () => {
-  const addr = account || manualAccount;
-  console.log('[loadUserData] 被调用, 当前账户:', addr);
-  if (!addr || !miningContract) {
-    console.warn('[loadUserData] 账户或合约未就绪');
-    return;
-  }
-  try {
-    const info = await miningContract.users(addr);
-    // 使用数组索引获取字段，确保正确性
-    const depositBaseWei = info[0];
-    const remainingDepositWei = info[1];
-    const pendingRewardWei = info[3];
-    const cumulativeDepositedWei = info[4];
-    const cumulativeWithdrawnWei = info[5];
-    const totalRewardedWei = info[6];
-
-    const newUserInfo = {
-      depositBase: ethers.utils.formatEther(depositBaseWei),
-      remainingDeposit: ethers.utils.formatEther(remainingDepositWei),
-      pendingReward: ethers.utils.formatEther(pendingRewardWei),
-      cumulativeDeposited: ethers.utils.formatEther(cumulativeDepositedWei),
-      cumulativeWithdrawn: ethers.utils.formatEther(cumulativeWithdrawnWei),
-      totalRewarded: ethers.utils.formatEther(totalRewardedWei),
-    };
-    console.log('[loadUserData] 将要设置的新 userInfo:', newUserInfo);
-    setUserInfo(newUserInfo);
-
-    const reward = await miningContract.pendingReward(addr);
-    setPendingReward(ethers.utils.formatEther(reward));
-
-    // 邀请码、节点信息等后续代码保持不变...
+    const addr = account || manualAccount;
+    if (!addr || !miningContract) return;
     try {
-      const code = await miningContract.getMyInviteCode();
-      if (code && code.toString() !== '0') setMyInviteCode(code.toString());
-    } catch (e) {}
+      const info = await miningContract.users(addr);
+      // 使用数组索引确保字段正确（避免 ABI 映射错误）
+      const depositBaseWei = info[0];
+      const remainingDepositWei = info[1];
+      const pendingRewardWei = info[3];
+      const cumulativeDepositedWei = info[4];
+      const cumulativeWithdrawnWei = info[5];
+      const totalRewardedWei = info[6];
 
-    try {
-      const nodeData = await miningContract.nodes(addr);
-      setIsNode(nodeData.isNode);
-      if (nodeData.isNode) {
-        const nodeEarnings = await miningContract.getNodeRealEarnings(addr);
-        setNodeInfo({
-          claimed: ethers.utils.formatEther(nodeEarnings.claimed),
-          pending: ethers.utils.formatEther(nodeEarnings.pending),
-          total: ethers.utils.formatEther(nodeEarnings.total),
-          lastSnapshot: ethers.utils.formatEther(nodeEarnings.lastSnapshot),
-        });
-      }
-    } catch (e) {}
+      const newUserInfo = {
+        depositBase: ethers.utils.formatEther(depositBaseWei),
+        remainingDeposit: ethers.utils.formatEther(remainingDepositWei),
+        pendingReward: ethers.utils.formatEther(pendingRewardWei),
+        cumulativeDeposited: ethers.utils.formatEther(cumulativeDepositedWei),
+        cumulativeWithdrawn: ethers.utils.formatEther(cumulativeWithdrawnWei),
+        totalRewarded: ethers.utils.formatEther(totalRewardedWei),
+      };
+      setUserInfo(newUserInfo);
 
-    if (!myInviteCode && parseFloat(ethers.utils.formatEther(cumulativeDepositedWei)) === 0) {
+      const reward = await miningContract.pendingReward(addr);
+      setPendingReward(ethers.utils.formatEther(reward));
+
       try {
-        const referrer = await miningContract.referrers(addr);
-        if (!referrer || referrer === '0x0000000000000000000000000000000000000000') {
-          if (!sessionStorage.getItem('inviteSkipped')) setShowInviteModal(true);
+        const code = await miningContract.getMyInviteCode();
+        if (code && code.toString() !== '0') setMyInviteCode(code.toString());
+      } catch (e) {}
+
+      try {
+        const nodeData = await miningContract.nodes(addr);
+        setIsNode(nodeData.isNode);
+        if (nodeData.isNode) {
+          const nodeEarnings = await miningContract.getNodeRealEarnings(addr);
+          setNodeInfo({
+            claimed: ethers.utils.formatEther(nodeEarnings.claimed),
+            pending: ethers.utils.formatEther(nodeEarnings.pending),
+            total: ethers.utils.formatEther(nodeEarnings.total),
+            lastSnapshot: ethers.utils.formatEther(nodeEarnings.lastSnapshot),
+          });
         }
       } catch (e) {}
+
+      // 邀请码弹窗逻辑（仅当无存款且无上级且无邀请码时）
+      if (!myInviteCode && parseFloat(ethers.utils.formatEther(cumulativeDepositedWei)) === 0) {
+        try {
+          const referrer = await miningContract.referrers(addr);
+          if (!referrer || referrer === '0x0000000000000000000000000000000000000000') {
+            if (!sessionStorage.getItem('inviteSkipped')) setShowInviteModal(true);
+          }
+        } catch (e) {}
+      }
+    } catch (error) {
+      console.error('loadUserData 失败:', error);
     }
-  } catch (error) {
-    console.error('[loadUserData] 失败:', error);
-  }
-}, [account, manualAccount, miningContract, myInviteCode]);
+  }, [account, manualAccount, miningContract, myInviteCode]);
 
   const loadGlobalData = async () => {
     if (!miningContract) return;
@@ -249,18 +244,54 @@ function App() {
     }
   }, [account, manualAccount, miningContract, loadUserData, loadBalances]);
 
-  // ================= 全局调试函数 =================
+  // ========== 邀请链接处理 ==========
+  // 读取 URL 中的邀请码参数
   useEffect(() => {
-    window.debugLoadUserData = async () => {
-      console.log('[debug] 手动触发 loadUserData');
-      await loadUserData();
-      console.log('[debug] loadUserData 执行完成');
-    };
-    window.debugMiningContract = miningContract;
-    window.debugGetUserInfo = () => userInfo;
-  }, [loadUserData, miningContract, userInfo]);
+    const urlParams = new URLSearchParams(window.location.search);
+    const refCode = urlParams.get('ref');
+    if (refCode && refCode.length >= 6 && !inviteCode && !myInviteCode) {
+      setInviteCode(refCode);
+      if (!currentAccount) {
+        localStorage.setItem('pendingInviteCode', refCode);
+      } else {
+        setShowInviteModal(true);
+      }
+    }
+  }, [inviteCode, myInviteCode, currentAccount]);
 
-  // ================= 钱包连接函数 =================
+  // 钱包连接后处理待处理邀请码
+  useEffect(() => {
+    if (currentAccount && !myInviteCode) {
+      const pendingCode = localStorage.getItem('pendingInviteCode');
+      if (pendingCode && pendingCode.length >= 6) {
+        setInviteCode(pendingCode);
+        localStorage.removeItem('pendingInviteCode');
+        setTimeout(() => {
+          if (!myInviteCode && !sessionStorage.getItem('inviteSkipped')) {
+            setShowInviteModal(true);
+          }
+        }, 1000);
+      }
+    }
+  }, [currentAccount, myInviteCode]);
+
+  const copyInviteLink = async () => {
+    const inviteLink = `${window.location.origin}/?ref=${myInviteCode}`;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      alert('邀請鏈接已複製！');
+    } catch (err) {
+      const textarea = document.createElement('textarea');
+      textarea.value = inviteLink;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      alert('邀請鏈接已複製！');
+    }
+  };
+
+  // ========== 钱包连接函数 ==========
   const connectWallet = async (connector) => {
     try {
       if (window.ethereum) {
@@ -280,7 +311,7 @@ function App() {
     deactivate();
   };
 
-  // ================= 其他业务函数 =================
+  // ========== 其他业务函数 ==========
   const copyToClipboard = async (text) => {
     const textStr = String(text);
     try {
@@ -404,6 +435,9 @@ function App() {
       alert('註冊成功！');
       setShowInviteModal(false);
       setInviteCode('');
+      // 清除邀请相关缓存，避免再次弹窗
+      localStorage.removeItem('pendingInviteCode');
+      sessionStorage.setItem('inviteSkipped', 'true');
       initializeTeamData(miningContract, 88220320).then(() => {
         saveCache();
         window.dispatchEvent(new CustomEvent('teamDataUpdated', { detail: { upline: account || manualAccount } }));
@@ -508,7 +542,10 @@ function App() {
                 {!myInviteCode ? (
                   <button onClick={handleGenerateInviteCode} disabled={inviteLoading} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm">{inviteLoading ? '處理中...' : '生成邀請碼'}</button>
                 ) : (
-                  <div className="flex items-center space-x-2"><span className="font-mono text-lg font-bold text-blue-600">{myInviteCode}</span><button onClick={() => copyToClipboard(myInviteCode)} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 transition text-sm">複製</button></div>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-mono text-lg font-bold text-blue-600">{myInviteCode}</span>
+                    <button onClick={copyInviteLink} className="px-3 py-1 bg-blue-500 text-white rounded text-sm">複製邀請鏈接</button>
+                  </div>
                 )}
               </div>
               <div className="mt-3 text-center text-xs text-gray-400">文化挖礦 · www.culture2006.com</div>
@@ -517,10 +554,11 @@ function App() {
             <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold">我的帳戶</h2>
-                <div className="flex gap-2">
-                  <button onClick={() => { loadUserData(); loadBalances(); }} className="px-3 py-1 bg-blue-500 text-white rounded-lg text-sm">🔄 強制刷新</button>
-                  {featureConfig.features.showReferral && <button onClick={() => { setSelectedUser(currentAccount); setShowTeamView(true); }} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm flex items-center">👥 我的團隊</button>}
-                </div>
+                {featureConfig.features.showReferral && (
+                  <button onClick={() => { setSelectedUser(currentAccount); setShowTeamView(true); }} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm flex items-center">
+                    👥 我的團隊
+                  </button>
+                )}
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div><p className="text-gray-500 text-xs">存款基礎</p><p className="text-base font-medium">{parseFloat(userInfo.depositBase).toFixed(4)}</p></div>
@@ -553,7 +591,7 @@ function App() {
             <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
               <h2 className="text-2xl font-bold mb-2">輸入邀請碼</h2>
               <p className="text-gray-600 mb-4">輸入好友的邀請碼，雙方都可獲得獎勵（可跳過）</p>
-              <input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="請輸入8位邀請碼" className="w-full p-3 border rounded-lg mb-4 text-lg" />
+              <input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="請輸入8位邀請碼" className="w-full p-3 border rounded-lg mb-4 text-lg" readOnly={inviteCode && window.location.search.includes('ref')} />
               <div className="flex flex-col gap-3">
                 <button onClick={handleRegisterWithInvite} disabled={inviteLoading || !inviteCode} className="py-3 bg-blue-600 text-white rounded-lg">提交</button>
                 <button onClick={handleSkipInvite} className="py-3 bg-gray-500 text-white rounded-lg">跳過</button>
