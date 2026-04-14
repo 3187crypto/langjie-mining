@@ -64,24 +64,26 @@ const OwnerMenu = ({ contract, ownerAddress, onClose, onConfigChange }) => {
   };
 
   const handleBuyback = async () => {
-    if (!buybackAmount || parseFloat(buybackAmount) <= 0) {
-      showMessage('请输入有效的 USDT 数量', 'error');
-      return;
-    }
-    setLoading(true);
-    try {
-      const amount = ethers.utils.parseEther(buybackAmount);
-      const tx = await contract.buybackAndBurn(amount, 0);
-      await tx.wait();
-      showMessage(`成功回购销毁 ${buybackAmount} USDT`);
-      setBuybackAmount('');
-      loadPendingData();
-    } catch (error) {
-      showMessage('回购销毁失败: ' + error.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (!buybackAmount || parseFloat(buybackAmount) <= 0) {
+    showMessage('请输入有效的 USDT 数量', 'error');
+    return;
+  }
+  setLoading(true);
+  try {
+    const amount = ethers.utils.parseEther(buybackAmount);
+    // 滑点设置为 1% (1% = 1 * 10^18 wei)
+    const slippage = ethers.utils.parseEther("1");
+    const tx = await contract.buybackAndBurn(amount, slippage);
+    await tx.wait();
+    showMessage(`成功回购销毁 ${buybackAmount} USDT`);
+    setBuybackAmount('');
+    loadPendingData();
+  } catch (error) {
+    showMessage('回购销毁失败: ' + error.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleAddLiquidity = async () => {
     if (!liquidityAmount || parseFloat(liquidityAmount) <= 0) {
